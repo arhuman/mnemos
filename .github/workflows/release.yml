@@ -19,7 +19,7 @@ jobs:
           # Build shipped binaries with the latest stable Go so they carry all
           # runtime/stdlib security fixes, independent of the go.mod floor.
           go-version: stable
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
