@@ -1,0 +1,26 @@
+[
+  {
+    "ordinal": 0,
+    "heading_path": "type Greeting",
+    "start_line": 3,
+    "end_line": 6,
+    "token_count": 17,
+    "content": "// Greeting is the canonical greeting.\ntype Greeting struct {\n\tText string\n}"
+  },
+  {
+    "ordinal": 1,
+    "heading_path": "func Hello",
+    "start_line": 8,
+    "end_line": 11,
+    "token_count": 24,
+    "content": "// Hello returns a greeting for name.\nfunc Hello(name string) string {\n\treturn \"hello \" + name\n}"
+  },
+  {
+    "ordinal": 2,
+    "heading_path": "method Greeting.Greet",
+    "start_line": 13,
+    "end_line": 16,
+    "token_count": 19,
+    "content": "// Greet renders the greeting.\nfunc (g Greeting) Greet() string {\n\treturn g.Text\n}"
+  }
+]

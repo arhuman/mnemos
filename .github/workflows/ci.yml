@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor is the go.mod minimum; "stable" is the latest release, which is
+        # also what release.yml builds shipped binaries with (security patches).
+        go: ["1.25", "stable"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+      - name: Build (default, cgo-free)
+        run: CGO_ENABLED=0 go build ./...
+      - name: Build (embed tag, cgo-free)
+        run: CGO_ENABLED=0 go build -tags embed ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race + coverage)
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Coverage gate (>= 80%)
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "total coverage: ${total}%"
+          awk "BEGIN{ exit !(${total}+0 >= 80) }" \
+            || { echo "FAIL: coverage ${total}% is below the 80% gate"; exit 1; }
+      - name: Benchmarks (smoke, 1x)
+        run: go test -run='^$' -bench=. -benchmem -benchtime=1x ./...
+
+  lint:
+    name: lint + vuln
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Verify modules
+        run: go mod verify
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

@@ -1,0 +1,50 @@
+name: Bug report
+description: Report something that isn't working as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug. Please fill in the details below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: "`mnemos search ...` returned ... but I expected ..."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands to reproduce. Include the config if relevant.
+      placeholder: |
+        1. mnemos init
+        2. mnemos ingest docs --collection x
+        3. mnemos search "..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mnemos version
+      description: Output of `mnemos version -v`.
+      placeholder: "version: v0.1.0  commit: ...  go: go1.25.7"
+    validations:
+      required: true
+  - type: dropdown
+    id: build
+    attributes:
+      label: Build variant
+      options:
+        - "default (lexical)"
+        - "embed (semantic / -tags embed)"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      placeholder: "macOS 15 arm64 / Ubuntu 24.04 amd64"
+    validations:
+      required: true

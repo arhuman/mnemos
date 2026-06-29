@@ -1,0 +1,10 @@
+[
+  {
+    "ordinal": 0,
+    "heading_path": "",
+    "start_line": 1,
+    "end_line": 6,
+    "token_count": 26,
+    "content": "First paragraph of the plain text file.\nIt spans two lines.\n\nSecond paragraph stands alone.\n\nThird paragraph closes the file.\n"
+  }
+]

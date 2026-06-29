@@ -1,0 +1,15 @@
+# Build artifacts
+/bin/
+/mnemos
+
+# Runtime state (database, captured notes, generated config) — at any depth, so
+# running `mnemos init` in examples/ or a subproject doesn't dirty the repo.
+.mnemos/
+.mnemos.toml
+
+# Coverage reports written by `make cover`
+/coverage.out
+/coverage.html
+
+# Eval baselines written by `mnemos eval --save` (uncomment to ignore)
+# baseline.json

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & discussion
+    url: https://github.com/arhuman/mnemos/discussions
+    about: Ask questions, share setups, and discuss ideas.
+  - name: Security report
+    url: https://github.com/arhuman/mnemos/security/advisories/new
+    about: Report a vulnerability privately (see SECURITY.md).

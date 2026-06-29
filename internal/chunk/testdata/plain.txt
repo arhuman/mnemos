@@ -1,0 +1,6 @@
+First paragraph of the plain text file.
+It spans two lines.
+
+Second paragraph stands alone.
+
+Third paragraph closes the file.

@@ -1,0 +1,82 @@
+[
+  {
+    "ordinal": 0,
+    "heading_path": "",
+    "start_line": 7,
+    "end_line": 7,
+    "token_count": 0,
+    "content": ""
+  },
+  {
+    "ordinal": 1,
+    "heading_path": "Title",
+    "start_line": 8,
+    "end_line": 11,
+    "token_count": 10,
+    "content": "# Title\n\nIntro paragraph before any subheading.\n"
+  },
+  {
+    "ordinal": 2,
+    "heading_path": "Title \u003e Security",
+    "start_line": 12,
+    "end_line": 15,
+    "token_count": 12,
+    "content": "## Security\n\nSecurity overview. See [identity guide](identity.md) and [external](https://example.com).\n"
+  },
+  {
+    "ordinal": 3,
+    "heading_path": "Title \u003e Security \u003e Identity",
+    "start_line": 16,
+    "end_line": 17,
+    "token_count": 3,
+    "content": "### Identity\n"
+  },
+  {
+    "ordinal": 4,
+    "heading_path": "Title \u003e Security \u003e Identity",
+    "start_line": 17,
+    "end_line": 19,
+    "token_count": 39,
+    "content": "\nIdentity body with enough words here to stay a single chunk because the token budget is generous in this golden fixture so it will not split into windows at all.\n"
+  },
+  {
+    "ordinal": 5,
+    "heading_path": "Title \u003e Oversized",
+    "start_line": 20,
+    "end_line": 22,
+    "token_count": 29,
+    "content": "## Oversized\n\nword word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+    "ordinal": 6,
+    "heading_path": "Title \u003e Oversized",
+    "start_line": 22,
+    "end_line": 22,
+    "token_count": 26,
+    "content": "word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+    "ordinal": 7,
+    "heading_path": "Title \u003e Oversized",
+    "start_line": 23,
+    "end_line": 23,
+    "token_count": 26,
+    "content": "word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+    "ordinal": 8,
+    "heading_path": "Title \u003e Oversized",
+    "start_line": 24,
+    "end_line": 24,
+    "token_count": 26,
+    "content": "word word word word word word word word word word word word word word word word word word word word"
+  },
+  {
+    "ordinal": 9,
+    "heading_path": "Title \u003e Oversized",
+    "start_line": 25,
+    "end_line": 25,
+    "token_count": 26,
+    "content": "word word word word word word word word word word word word word word word word word word word word"
+  }
+]
