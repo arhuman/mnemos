@@ -1,7 +1,6 @@
 version: "2"
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
-  fast: false
   enable:
   # some descriptions are from: https://golangci-lint.run/docs/linters/ and https://dev.to/olegkovalov/go-linters-configuration-the-right-version-3jeo
     - asasalint        # Check for pass []any as any in variadic func(...any)
