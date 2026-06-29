@@ -10,7 +10,7 @@ require (
 	github.com/adrg/frontmatter v0.2.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gomlx/gomlx v0.27.3
 	github.com/gomlx/onnx-gomlx v0.4.2
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.1
