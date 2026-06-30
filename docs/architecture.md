@@ -108,3 +108,35 @@ corpus for evaluating retrieval. The methodology (`internal/eval`):
   `baseline.json` and prints the deltas; the FTS lexical baseline is the number
   semantic embeddings must beat. Without a gate, watching for drift over time is
   manual.
+
+## Performance profile
+
+Benchmarks live with the hot-path packages (`internal/chunk`, `internal/ingest`,
+`internal/search`). A CPU + allocation profile of the search benchmarks
+(`go test ./internal/search -bench=. -benchmem -cpuprofile -memprofile`, 12-core
+darwin) gives the picture below. Re-run it after any retrieval change.
+
+| Benchmark | chunks | ns/op | B/op | allocs/op |
+|---|---|---|---|---|
+| `LexicalSearch` | — | 2.75M | 22.7K | 668 |
+| `VectorSearch` | 2,000 | 3.33M | 6.45M | 14,246 |
+| `VectorSearch` | 10,000 | 16.5M | 32.7M | 70,252 |
+| `HybridSearch` | 2,000 | 6.98M | 6.60M | 17,453 |
+| `HybridSearch` | 10,000 | 30.0M | 32.8M | 73,459 |
+
+Findings:
+
+- **The lexical default path is cheap and flat** — ~2.75 ms and 22 KB per query,
+  with the work pushed into SQLite FTS5. The default cgo-free binary pays none of
+  the cost below.
+- **Vector/hybrid cost is linear in the chunk count** and allocation-bound. The
+  alloc profile attributes ~90% of bytes to `sqlite.columnBlob` + `bytes.Clone`
+  inside `VectorRetriever.Search` (cum 95.7%), and the CPU profile is ~67% syscall
+  — i.e. every query reads and copies *every* stored vector blob out of SQLite
+  (a brute-force scan), ~3.2 KB and ~7 allocs per chunk.
+- **Implication.** Semantic retrieval scales O(N·dim) per query because there is no
+  vector index; this is the known limitation tracked in
+  [ADR 0003](adr/0003-vector-search-scaling.md). The first optimization lever, if
+  semantic search becomes hot on large corpora, is to stop re-reading all blobs per
+  query — cache decoded vectors in memory or add an ANN index — not to micro-tune
+  the scan. The lexical path needs no work.
