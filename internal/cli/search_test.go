@@ -14,12 +14,12 @@ func TestSearchCommand(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	seedKB(t, filepath.Join("src", "docs", "scim.md"),
+	seedKB(t, filepath.Join("docs", "scim.md"),
 		"# SCIM\n\n## Provisioning\n\nSCIM provisioning with Entra synchronizes users automatically.\n")
-	seedKB(t, filepath.Join("src", "docs", "cooking.md"),
+	seedKB(t, filepath.Join("docs", "cooking.md"),
 		"# Cooking\n\n## Pasta\n\nBoil water and cook pasta.\n")
 
-	runCmd(t, "ingest", "src", "--collection", "docs")
+	runCmd(t, "ingest", ".", "--collection", "docs")
 
 	t.Run("citation format", func(t *testing.T) {
 		out := runCmd(t, "search", "SCIM", "provisioning", "Entra")

@@ -26,12 +26,13 @@ func TestIngestPopulatesStore(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	// Content lives inside the kb (managed store); ingest "src" scans kb/src.
-	seedKB(t, filepath.Join("src", "a.md"), "---\ntype: note\ntags: [x]\n---\n\n# Title\n\nBody. [link](b.md)\n")
-	seedKB(t, filepath.Join("src", "index.md"), "# Bundle\n\nstructure only [hub](a.md)\n")
-	seedKB(t, filepath.Join("src", "note.txt"), "plain text\n\nsecond para\n")
+	// Content lives inside the kb (managed store); `ingest .` scans the kb and
+	// mints kb-relative URIs.
+	seedKB(t, "a.md", "---\ntype: note\ntags: [x]\n---\n\n# Title\n\nBody. [link](b.md)\n")
+	seedKB(t, "index.md", "# Bundle\n\nstructure only [hub](a.md)\n")
+	seedKB(t, "note.txt", "plain text\n\nsecond para\n")
 
-	out := runCmd(t, "ingest", "src", "--collection", "demo")
+	out := runCmd(t, "ingest", ".", "--collection", "demo")
 	require.Contains(t, out, "files scanned:   3")
 	require.Contains(t, out, "files ingested:  3")
 
@@ -71,7 +72,7 @@ func TestIngestPopulatesStore(t *testing.T) {
 	})
 
 	t.Run("re-ingest skips unchanged", func(t *testing.T) {
-		out := runCmd(t, "ingest", "src", "--collection", "demo")
+		out := runCmd(t, "ingest", ".", "--collection", "demo")
 		require.Contains(t, out, "files skipped:   3")
 		require.Contains(t, out, "files ingested:  0")
 	})
@@ -119,7 +120,7 @@ func TestIngestSkipsUnparseableFile(t *testing.T) {
 	seedKB(t, "bad.md", "---\nfoo: bar: baz\n---\n# Bad\n\nbody\n") // broken YAML frontmatter
 
 	out := runCmd(t, "ingest", ".", "--collection", "demo") // must not error
-	require.Contains(t, out, "files ingested:  1")           // only good.md
+	require.Contains(t, out, "files ingested:  1")          // only good.md
 }
 
 // count runs a scalar COUNT query and returns the integer result.

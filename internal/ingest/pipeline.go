@@ -20,7 +20,11 @@ import (
 
 // Options configures a single ingest run.
 type Options struct {
-	Root       string
+	Root string
+	// URIBase is the directory document URIs are made relative to. Leave empty to
+	// use Root (scan-root-relative URIs); set it to the knowledge-base root so a
+	// subtree ingest still mints kb-relative URIs.
+	URIBase    string
 	Collection string
 	Rules      Rules
 	Chunking   chunk.Config
@@ -130,7 +134,7 @@ func (p *Pipeline) drainWrites(ctx context.Context, in <-chan result, out chan<-
 // flows through one writer goroutine that owns all DB writes and all tallying,
 // so the counters are race-free by construction.
 func (p *Pipeline) Run(ctx context.Context, opts Options) (Summary, error) {
-	files, err := scan(opts.Root, scanRules{
+	files, err := scan(opts.Root, opts.URIBase, scanRules{
 		include:         opts.Rules.Include,
 		exclude:         opts.Rules.Exclude,
 		securityExclude: opts.Rules.SecurityExclude,

@@ -28,25 +28,69 @@ type scanRules struct {
 // scan walks root and returns the files selected by rules, in deterministic
 // (lexical) order. root may be a single file, in which case it is evaluated
 // against the rules using its base name as the relative path.
-func scan(root string, rules scanRules) ([]scanned, error) {
+//
+// Glob matching is performed on the path relative to root (so exclude anchors
+// like ".git/**" catch the scan root), while the stored URI is the path relative
+// to uriBase. uriBase is the knowledge-base root, so a subtree ingest still mints
+// kb-relative URIs; passing root as uriBase reproduces scan-root-relative URIs.
+func scan(root, uriBase string, rules scanRules) ([]scanned, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		return nil, fmt.Errorf("scan: stat %q: %w", root, err)
 	}
-
-	if !info.IsDir() {
-		rel := filepath.Base(root)
-		if !rules.match(rel) {
-			return nil, nil
+	if uriBase == "" {
+		// Default to the scan root, reproducing scan-root-relative URIs. For a
+		// single-file root the base is its parent dir, so the URI is the base name
+		// (Rel(file, file) would otherwise be ".").
+		if info.IsDir() {
+			uriBase = root
+		} else {
+			uriBase = filepath.Dir(root)
 		}
-		abs, err := filepath.Abs(root)
-		if err != nil {
-			return nil, fmt.Errorf("scan: abs %q: %w", root, err)
-		}
-
-		return []scanned{{absPath: abs, uri: filepath.ToSlash(rel)}}, nil
+	}
+	baseAbs, err := filepath.Abs(uriBase)
+	if err != nil {
+		return nil, fmt.Errorf("scan: abs uri base %q: %w", uriBase, err)
 	}
 
+	if !info.IsDir() {
+		return scanFile(root, baseAbs, rules)
+	}
+
+	return scanDir(root, baseAbs, rules)
+}
+
+// uriRelTo returns the slash-normalized path of abs relative to baseAbs.
+func uriRelTo(baseAbs, abs string) (string, error) {
+	rel, err := filepath.Rel(baseAbs, abs)
+	if err != nil {
+		return "", fmt.Errorf("scan: uri rel %q: %w", abs, err)
+	}
+
+	return filepath.ToSlash(rel), nil
+}
+
+// scanFile evaluates a single-file root against the rules (matched by base name)
+// and, if selected, returns it with a uriBase-relative URI.
+func scanFile(root, baseAbs string, rules scanRules) ([]scanned, error) {
+	if !rules.match(filepath.Base(root)) {
+		return nil, nil
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("scan: abs %q: %w", root, err)
+	}
+	uri, err := uriRelTo(baseAbs, abs)
+	if err != nil {
+		return nil, err
+	}
+
+	return []scanned{{absPath: abs, uri: uri}}, nil
+}
+
+// scanDir walks a directory root, selecting files by rules (matched on the
+// root-relative path) and storing each with a uriBase-relative URI.
+func scanDir(root, baseAbs string, rules scanRules) ([]scanned, error) {
 	var out []scanned
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -55,19 +99,22 @@ func scan(root string, rules scanRules) ([]scanned, error) {
 		if d.IsDir() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
+		matchRel, err := filepath.Rel(root, path)
 		if err != nil {
 			return fmt.Errorf("scan: rel %q: %w", path, err)
 		}
-		rel = filepath.ToSlash(rel)
-		if !rules.match(rel) {
+		if !rules.match(filepath.ToSlash(matchRel)) {
 			return nil
 		}
 		abs, err := filepath.Abs(path)
 		if err != nil {
 			return fmt.Errorf("scan: abs %q: %w", path, err)
 		}
-		out = append(out, scanned{absPath: abs, uri: rel})
+		uri, err := uriRelTo(baseAbs, abs)
+		if err != nil {
+			return err
+		}
+		out = append(out, scanned{absPath: abs, uri: uri})
 
 		return nil
 	})

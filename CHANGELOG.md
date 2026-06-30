@@ -88,6 +88,10 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Ingestion now honors a document's own `collection:` frontmatter (the
   `--collection` flag is the fallback), so a re-index — including `mnemos migrate`
   — preserves each document's original collection.
+- Document URIs are always relative to the kb root, regardless of the subtree
+  passed to `add`/`ingest`/`watch`. A subtree ingest no longer mints short URIs
+  that mismatch the on-disk path, so `ls`/`read`/`move` and citations share one
+  namespace. (Glob matching stays anchored at the scan root.)
 - Capture is the fixed `kb/capture` subdirectory; notes cite `capture/<file>`.
 - `ingest <path>` confines its scan root to the kb, like `okfy`; an out-of-tree
   path is refused with guidance.

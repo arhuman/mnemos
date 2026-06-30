@@ -39,6 +39,9 @@ type WatchConfig struct {
 	// Events under it are ignored so the watcher does not churn on WAL/SHM writes
 	// it triggers itself.
 	StorageDir string
+	// URIBase is the directory document URIs are made relative to (the kb root).
+	// Empty means use the watched root, reproducing root-relative URIs.
+	URIBase string
 	// MaxFileBytes caps the size of a single file read into memory; a larger file
 	// is skipped with a warning. A value <= 0 disables the cap, matching the
 	// [indexing].max_file_bytes config contract.
@@ -54,6 +57,7 @@ type Watcher struct {
 	db         *sql.DB
 	logger     *slog.Logger
 	root       string
+	uriBase    string
 	collection string
 	cfg        WatchConfig
 	pipeline   *Pipeline
@@ -80,6 +84,13 @@ func NewWatcher(db *sql.DB, logger *slog.Logger, root, collection string, cfg Wa
 		return nil, fmt.Errorf("watch: %q is not a directory", abs)
 	}
 
+	uriBase := abs
+	if cfg.URIBase != "" {
+		if uriBase, err = filepath.Abs(cfg.URIBase); err != nil {
+			return nil, fmt.Errorf("watch: abs uri base %q: %w", cfg.URIBase, err)
+		}
+	}
+
 	// MaxFileBytes carries the same contract as the config and ingest paths: a
 	// value <= 0 disables the cap, > 0 sets it. Pass it straight through so
 	// `watch` honors `max_file_bytes = 0` (disable) identically to `ingest`.
@@ -87,6 +98,7 @@ func NewWatcher(db *sql.DB, logger *slog.Logger, root, collection string, cfg Wa
 		db:         db,
 		logger:     logger,
 		root:       abs,
+		uriBase:    uriBase,
 		collection: collection,
 		cfg:        cfg,
 		pipeline:   New(db, logger, WithMaxFileBytes(cfg.MaxFileBytes)),
@@ -155,6 +167,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 func (w *Watcher) reconcile(ctx context.Context) error {
 	summary, err := w.pipeline.Run(ctx, Options{
 		Root:       w.root,
+		URIBase:    w.uriBase,
 		Collection: w.collection,
 		Rules: Rules{
 			Include:         w.cfg.Include,
@@ -186,7 +199,7 @@ func (w *Watcher) removeVanished(ctx context.Context) error {
 	}
 	var vanished []string
 	for _, uri := range uris {
-		abs := filepath.Join(w.root, filepath.FromSlash(uri))
+		abs := filepath.Join(w.uriBase, filepath.FromSlash(uri))
 		if _, err = os.Stat(abs); errors.Is(err, os.ErrNotExist) {
 			vanished = append(vanished, uri)
 		}
@@ -273,7 +286,15 @@ func (w *Watcher) handleEvent(ctx context.Context, fsw *fsnotify.Watcher, event 
 
 		return
 	}
-	uri := filepath.ToSlash(rel)
+	// Match (glob anchoring) uses the root-relative path; the stored URI uses the
+	// uriBase-relative path so a subtree watch still mints kb-relative URIs.
+	uriRel, err := filepath.Rel(w.uriBase, path)
+	if err != nil {
+		w.logger.Warn("watch relativize uri", "path", path, "error", err)
+
+		return
+	}
+	uri := filepath.ToSlash(uriRel)
 
 	// Remove / rename-away: the file is gone (or moved out from under this name).
 	// Stat decides between "gone" and "still here after a rename-to"; debounce

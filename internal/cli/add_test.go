@@ -36,6 +36,21 @@ func TestAddIntoSubpath(t *testing.T) {
 	require.FileExists(t, kbPath(filepath.Join("work", "n.md")))
 }
 
+func TestAddMintsKBRelativeURIs(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "deep.md"), []byte("# Deep\n\nuniquephrase zeta\n"), 0o644))
+
+	// Added under a subpath: the URI is relative to the kb root (work/...), not to
+	// the scan root (which would drop the work/ prefix).
+	runCmd(t, "add", filepath.Join(ext, "deep.md"), "--into", filepath.Join("work", "deep.md"))
+
+	out := runCmd(t, "search", "uniquephrase zeta", "--json")
+	require.Contains(t, out, `"uri": "work/deep.md"`)
+}
+
 func TestAddRejectsDestOutsideKB(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
