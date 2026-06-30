@@ -36,10 +36,10 @@ Set TypingSpeed 60ms
 
 # --- hidden setup: index the real bundle, register mnemos as a TRUSTED local server ---
 # Local scope = you added it, so Claude trusts it and shows no approval prompt.
-# The absolute --config ($PWD/.mnemos.toml) is what makes the session actually use
+# The absolute --mnemos-dir ($PWD/.mnemos) is what makes the session actually use
 # mnemos: claude launches the stdio server from an unspecified cwd, so a relative
-# storage path would resolve to an empty database. mnemos resolves a relative
-# [storage].path against the config file's directory.
+# anchor would miss the workspace. An absolute MNEMOS_DIR pins the kb and index db
+# regardless of where the server is launched.
 # VHS does NOT wait for a typed command to finish before running the next line.
 # Each slow setup step therefore needs an explicit Sleep: without them the
 # still-streaming `ingest` / `claude mcp add` output bleeds past `clear` into the
@@ -48,12 +48,12 @@ Set TypingSpeed 60ms
 Hide
 Type "setopt INTERACTIVE_COMMENTS" Enter
 Type "export PROMPT='%F{cyan}mnemos ❯%f '" Enter
-Type "cd examples/onpage-seo/bundle" Enter
-Type "rm -rf .mnemos .mnemos.toml" Enter
+Type "cd examples/onpage-seo" Enter
+Type "rm -rf .mnemos" Enter
 Sleep 500ms
-Type "mnemos init && mnemos ingest . --collection seo" Enter
+Type "mnemos init && mnemos add bundle --collection seo" Enter
 Sleep 3s
-Type "claude mcp remove mnemos -s local 2>/dev/null; claude mcp add mnemos -- mnemos serve --config $PWD/.mnemos.toml" Enter
+Type "claude mcp remove mnemos -s local 2>/dev/null; claude mcp add mnemos -- mnemos serve --mnemos-dir $PWD/.mnemos" Enter
 Sleep 4s
 Type "clear" Enter
 Sleep 800ms
@@ -85,6 +85,6 @@ Sleep 4s
 Hide
 Type "claude mcp remove mnemos -s local 2>/dev/null" Enter
 Sleep 2s
-Type "rm -rf .mnemos .mnemos.toml" Enter
+Type "rm -rf .mnemos" Enter
 Sleep 500ms
 Show

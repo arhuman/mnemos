@@ -16,12 +16,12 @@
 # NOTE: `claude mcp add -s project` writes .mcp.json in the working dir; the hidden
 # setup and trailer both clear any prior registration so re-runs start clean.
 #
-# The `--config .mnemos.toml` arg is RELATIVE on purpose: a project-scoped .mcp.json
+# The `--mnemos-dir .mnemos` arg is RELATIVE on purpose: a project-scoped .mcp.json
 # is committed and must stay portable, and Claude Code launches a project server from
-# the directory holding .mcp.json — so the relative config resolves there, and mnemos
-# anchors a relative [storage].path next to that config. (The live session clip uses an
-# absolute --config instead, because a local-scope server is launched from an
-# unspecified cwd; see demo-session.tape.)
+# the directory holding .mcp.json — so the relative MNEMOS_DIR resolves there, and the
+# kb, index db, and models all derive from it. (The live session clip uses an absolute
+# --mnemos-dir instead, because a local-scope server is launched from an unspecified
+# cwd; see demo-session.tape.)
 
 Output docs/demo-mcp.gif
 
@@ -41,12 +41,12 @@ Set TypingSpeed 55ms
 Hide
 Type "setopt INTERACTIVE_COMMENTS" Enter
 Type "export PROMPT='%F{cyan}mnemos ❯%f '" Enter
-Type "cd examples/onpage-seo/bundle" Enter
-Type "rm -rf .mnemos .mnemos.toml .mcp.json" Enter
+Type "cd examples/onpage-seo" Enter
+Type "rm -rf .mnemos .mcp.json" Enter
 Sleep 500ms
 Type "claude mcp remove -s project mnemos 2>/dev/null" Enter
 Sleep 2s
-Type "mnemos init && mnemos ingest . --collection seo" Enter
+Type "mnemos init && mnemos add bundle --collection seo" Enter
 Sleep 3s
 Type "clear" Enter
 Sleep 800ms
@@ -57,7 +57,7 @@ Sleep 600ms
 Type "# give Claude Code a local, cited memory — one file, no cloud"
 Enter
 Sleep 900ms
-Type "claude mcp add -s project mnemos -- mnemos serve --config .mnemos.toml"
+Type "claude mcp add -s project mnemos -- mnemos serve --mnemos-dir .mnemos"
 Enter
 Sleep 3s
 
@@ -78,6 +78,6 @@ Sleep 2500ms
 Hide
 Type "claude mcp remove -s project mnemos 2>/dev/null" Enter
 Sleep 2s
-Type "rm -rf .mnemos .mnemos.toml .mcp.json" Enter
+Type "rm -rf .mnemos .mcp.json" Enter
 Sleep 500ms
 Show
