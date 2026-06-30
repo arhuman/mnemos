@@ -40,6 +40,25 @@ make build-embed    # embed variant
 go test -tags embed ./...
 ```
 
+## Paths and writes
+
+mnemos confines everything it touches to one anchor, the **MNEMOS_DIR** (see
+[docs/paths-and-indexing.md](docs/paths-and-indexing.md)). One invariant keeps that
+guarantee: **every caller-supplied path used for a write or delete must be resolved
+through `internal/security` first — never `filepath.Join` a raw argument and write
+to it.**
+
+- `security.ResolveWithin(root, p, exclude)` — for a single write/delete target
+  (`remember` custom path, `forget`, `move`). It returns the cleaned absolute path
+  and the root-relative URI, rejecting traversal, the root itself, the internal
+  state directory, excluded globs, and symlink escapes.
+- `security.ConfineDir(root, p)` — for a scan/ingest *root* (`ingest`, `add`,
+  `watch`), where the directory itself is a valid target.
+
+If you add a command or MCP tool that writes, deletes, or scans a path, route it
+through one of these and add a test for the rejection branch. Path handling that
+bypasses them will be flagged in review.
+
 ## Quality bar
 
 Before opening a PR:
