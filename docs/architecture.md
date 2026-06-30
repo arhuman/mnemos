@@ -41,6 +41,10 @@ files ────► │   ingest    │  scan → hash (change detection) → 
  │ bm25/hybrid │        └─────────────┘
  └──────┬──────┘
         │ cited results
+        ▼
+ ┌─────────────┐
+ │   memory    │  verb layer: search/read/context/remember/okfy/forget/move
+ └──────┬──────┘
    ┌────┴────┐
    ▼         ▼
 ┌──────┐  ┌──────┐
@@ -48,13 +52,21 @@ files ────► │   ingest    │  scan → hash (change detection) → 
 └──────┘  └──────┘
 ```
 
+`cli` and `mcp` are thin adapters: both call the same `memory` verb layer, so the
+two surfaces cannot drift in semantics or gating. All locations they touch are
+fixed subpaths of one **MNEMOS_DIR**, resolved by `workspace` (see
+[paths-and-indexing.md](paths-and-indexing.md)).
+
 ## Packages (`internal/`)
 
 | Package | Responsibility |
 |---------|----------------|
-| `app` | Config loading (TOML via koanf), logger, database wiring; the `App` handle subcommands build. |
-| `cli` | Cobra command tree (`init`, `ingest`, `search`, `serve`, …). Thin layer over the engines. |
-| `mcp` | MCP server and tool handlers (`search`, `read`, `context`, `remember`, `okfy`, `list`, `forget`, `move`). |
+| `app` | Composition root: resolves the workspace layout, loads config, opens and wires the database into the `App` handle subcommands build. |
+| `config` | Configuration schema, built-in defaults, and the TOML (koanf) loader. Carries behaviour only — indexing, chunking, search, MCP surface, security — never locations. |
+| `workspace` | Resolves the single MNEMOS_DIR anchor and the fixed layout derived from it (`kb/` knowledge base, `state/index.db`, `models/`). Every location is a subpath of MNEMOS_DIR; none is individually configurable. |
+| `cli` | Cobra command tree (`init`, `ingest`, `search`, `serve`, …). Thin adapter over `memory`. |
+| `mcp` | MCP server and tool handlers (`search`, `read`, `context`, `remember`, `okfy`, `list`, `forget`, `move`). Thin adapter over `memory`. |
+| `memory` | The verb layer: one owner of every memory operation (search, read, context, list, remember, okfy, forget, move). Both `cli` and `mcp` call it, so the two surfaces share semantics, gating, and option construction. |
 | `ingest` | Indexing pipeline: scanner, content hasher, debounced file watcher, capture, OKF-aware processing. |
 | `parse` | Frontmatter extraction and format-specific parsing (Markdown, Go, plain text). |
 | `chunk` | Token-aware splitting for text, Markdown, and code; golden-tested. |
