@@ -58,59 +58,61 @@ Requires Go 1.25+. The default build is **pure Go / cgo-free** (`make build` set
 
 ## Quick start
 
+mnemos keeps everything under one anchor, the **MNEMOS_DIR** (default `~/.mnemos`,
+or a project-local `./.mnemos`). Content you want searchable lives in its `kb/`;
+you bring it in with `add`.
+
 ```bash
 cd ~/work/myproject
-mnemos init                                 # creates ./.mnemos.toml + ./.mnemos/
-mnemos ingest docs --collection myproject   # index a directory
+mnemos init                                 # scaffolds ./.mnemos (kb/, state/, models/, mnemos.toml)
+mnemos add ~/work/myproject/docs --into docs --collection myproject   # copy a dir into kb/docs and index
 mnemos search "rule engine"                 # query from the CLI
 ```
 
 `search` prints citations:
 
 ```text
-1. security/scim.md#Provisioning
+1. docs/security/scim.md#Provisioning
    lines 42-88
    score 12.7
 ```
 
-Citations use the path **relative to the scan root** you ingested (`docs` here),
-not your working directory.
+Citations use the document's URI: its path **relative to `kb/`**. The database and
+models live in the MNEMOS_DIR but outside `kb/`, so they are never indexed.
+Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
 
-> ⚠️ **Mind the URI footgun.** A document's identity is its path *relative to where
-> you run `ingest`*. Ingesting two directories that each contain (say) `index.md`
-> resolves both to the same URI: the **second ingest silently overwrites the
-> first**. To index several trees cleanly, ingest from one common root
-> (`mnemos ingest .`). Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
+> Coming from an older mnemos? `[storage].path`/`[capture].dir` and the
+> `~/.mnemos.toml` + `./.mnemos.toml` layering are gone. Move an existing workspace
+> with `mnemos migrate --from <old-root> --to ~/.mnemos` (copies by default).
 
 ## Connect Claude Code
 
-Register the MCP server with an **absolute `--config`** path:
+Point the MCP server at a workspace with an **absolute `--mnemos-dir`**:
 
 ```bash
-claude mcp add mnemos -- mnemos serve --config /abs/path/to/project/.mnemos.toml
+claude mcp add mnemos -- mnemos serve --mnemos-dir /abs/path/to/.mnemos
 ```
 
 Or commit it with the repo via `.mcp.json`:
 
 ```json
-{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--config", "/abs/path/to/project/.mnemos.toml"] } } }
+{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--mnemos-dir", "/abs/path/to/.mnemos"] } } }
 ```
 
 Verify with `claude mcp list` (should show `mnemos ✓ connected`) and `/mcp` inside
 a session. Claude then calls the tools automatically; see [Capabilities](#capabilities).
 
 <details>
-<summary>Why the <code>--config</code> path must be absolute</summary>
+<summary>Why the <code>--mnemos-dir</code> path must be absolute</summary>
 
 Claude Code does not guarantee the working directory it spawns the server in, so
-anchoring to the config file is what makes retrieval reliable. `mnemos serve`
-resolves a relative `[storage].path` against the config file's directory, so an
-absolute `--config` is all you need: the database, capture directory, and tree
-root all anchor next to that file regardless of where Claude Code launches the
-server. A bare `mnemos serve` only finds your data when the server's working
-directory happens to be the project root, which Claude Code does not promise; when
-the database can't be found, `serve` fails with a clear error instead of silently
-returning empty results.
+anchoring to an absolute MNEMOS_DIR is what makes retrieval reliable: the database,
+capture, and the kb URI namespace are all fixed subpaths of it, regardless of where
+Claude Code launches the server. A bare `mnemos serve` falls back to project
+discovery and then `~/.mnemos`, which only matches your data when the cwd is right —
+which Claude Code does not promise. When the database can't be found, `serve` fails
+with a clear error instead of silently returning empty results. (`--config
+/abs/.mnemos/mnemos.toml` works too; its directory becomes the MNEMOS_DIR.)
 </details>
 
 <p align="center">
@@ -163,7 +165,7 @@ commands). Note the spelling: `mnemos.search` is the **MCP tool** Claude calls;
 
 ### Write (requires `allow_write = true`)
 
-- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the OKF tree instead of auto-naming under `[capture].dir`. Content is **secret-scanned** before it is written and indexed.
+- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the kb instead of auto-naming under `kb/capture`. Content is **secret-scanned** before it is written and indexed.
 - **`mnemos.okfy`**: convert an existing `.txt`/`.md` file in the tree into an OKF document (frontmatter + body) at `out` (defaults to the source path with a `.md` extension) and index it, leaving the source intact. The source body is **secret-scanned** first.
 
 ### Manage (requires `allow_delete = true`)
@@ -179,7 +181,7 @@ Run a watcher to reindex on change (incremental; removes deleted files):
 mnemos watch . --collection myproject
 ```
 
-Enable write-back in `.mnemos.toml` so Claude can capture and manage notes:
+Enable write-back in `mnemos.toml` so Claude can capture and manage notes:
 
 ```toml
 [mcp]
@@ -231,14 +233,16 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 
 | Command | Purpose |
 |---|---|
-| `mnemos init` | Create config, state dir, and database |
-| `mnemos ingest <path> --collection <c>` | Index a file or directory |
+| `mnemos init [--global]` | Scaffold a MNEMOS_DIR (`./.mnemos` by default, `~/.mnemos` with `--global`) |
+| `mnemos add <source> [--into <subpath> --mode copy\|link --collection <c>]` | Copy/link external content into the kb and index it |
+| `mnemos ingest <kb-subpath> --collection <c>` | Re-index content already inside the kb |
+| `mnemos migrate --from <old> [--to <dir> --move]` | Relocate a pre-MNEMOS_DIR workspace into the kb/ layout and reindex |
 | `mnemos search <query> [--collection --path --type --since --limit --semantic --json]` | Search the index (`--semantic` fuses lexical + vector; needs the embed build) |
 | `mnemos ls [path] [--collection --type --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
 | `mnemos eval <okf-bundle> [--baseline <f> --save --semantic --limit N]` | Retrieval-quality eval on an OKF bundle (`--semantic` evaluates the hybrid retriever) |
 | `mnemos watch <path> --collection <c>` | Watch and incrementally reindex |
 | `mnemos serve` | Run the MCP server (stdio) |
-| `mnemos status` | Show storage path, counts, and FTS availability |
+| `mnemos status` | Show the workspace layout (anchor, kb, index db), counts, and FTS availability |
 | `mnemos version [-v]` | Print the version; `-v` adds commit, build date, and Go toolchain |
 | `mnemos models install` | Download an embedding model into `~/.mnemos/models` (for the embed build) |
 | `mnemos reindex --embeddings` | Recompute and store embedding vectors for all chunks |
@@ -251,23 +255,15 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 </details>
 
 <details>
-<summary><strong>Configuration (<code>.mnemos.toml</code>)</strong></summary>
+<summary><strong>Configuration (<code>mnemos.toml</code>)</strong></summary>
 
-Configuration is layered, lowest precedence first:
-
-1. **Built-in defaults** (the values shown below).
-2. **`~/.mnemos.toml`**: user-global overrides, applied to every project.
-3. **`./.mnemos.toml`**: the project file in the working directory; its keys win over the home file.
-
-Each layer overrides only the keys it sets; everything else falls through to the
-layer below, so a partial file is fine. Passing `--config <path>` **replaces** this
-auto-discovery entirely: only that file is layered on top of the defaults (the home
-and project files are ignored), and its directory becomes the tree root.
+The config lives at `<MNEMOS_DIR>/mnemos.toml` and carries **behaviour only** — no
+location keys. Every path (kb, capture, database, models) derives from the
+MNEMOS_DIR; see [docs/paths-and-indexing.md](docs/paths-and-indexing.md) for how the
+anchor is resolved. The file is optional: a missing key falls back to the default
+shown below.
 
 ```toml
-[storage]
-path = ".mnemos/mnemos.db"
-
 [indexing]
 include = ["**/*.md", "**/*.txt", "**/*.go", "**/*.sql"]
 exclude = [".git/**", "node_modules/**", "vendor/**", "dist/**"]
@@ -286,7 +282,6 @@ allow_write = false        # gates mnemos.remember
 allow_delete = false       # gates mnemos.forget and mnemos.move
 
 [capture]
-dir = ".mnemos/capture"    # default path for auto-named notes
 defer_to_watcher = false   # true => remember is write-only, watcher ingests
 
 [security]

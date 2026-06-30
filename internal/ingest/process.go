@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -103,7 +104,16 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 		return result{}, fmt.Errorf("ingest: parse %q: %w", f.uri, err)
 	}
 
-	docID := documentID(opts.Collection, f.uri)
+	// An OKF document's own `collection:` frontmatter is authoritative; the
+	// --collection flag is the fallback for files that don't declare one. This
+	// keeps a document's collection stable across re-ingests and lets a
+	// re-index (e.g. mnemos migrate) preserve the original collections.
+	collection := opts.Collection
+	if fc, ok := parsed.Frontmatter["collection"].(string); ok && strings.TrimSpace(fc) != "" {
+		collection = strings.TrimSpace(fc)
+	}
+
+	docID := documentID(collection, f.uri)
 	chunks := assignIDs(docID, chunk.Dispatch(parsed, opts.Chunking, p.tc))
 
 	modifiedAt := modTime
@@ -114,7 +124,7 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 	doc := model.Document{
 		ID:              docID,
 		URI:             f.uri,
-		Collection:      opts.Collection,
+		Collection:      collection,
 		ContentHash:     hash,
 		Title:           parsed.Title,
 		MimeType:        mimeType(f.absPath),

@@ -75,6 +75,9 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   the managed-store entry point.
 - `mnemos init --global` initializes `~/.mnemos`; bare `init` creates a
   project-local `./.mnemos`.
+- `mnemos migrate --from <old> [--to <dir>] [--move]`: relocates a pre-MNEMOS_DIR
+  workspace into the `kb/` layout and reindexes (copy by default; the source is
+  left intact unless `--move`).
 - Root flag `--mnemos-dir`; `status` now reports the effective workspace (anchor,
   resolution source, kb root, index db).
 
@@ -82,6 +85,9 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Configuration carries behaviour only (`[indexing]`, `[chunking]`, `[search]`,
   `[mcp]`, `[capture].defer_to_watcher`, `[security]`). All content and state
   locations are derived from `MNEMOS_DIR`, not configured.
+- Ingestion now honors a document's own `collection:` frontmatter (the
+  `--collection` flag is the fallback), so a re-index — including `mnemos migrate`
+  — preserves each document's original collection.
 - Capture is the fixed `kb/capture` subdirectory; notes cite `capture/<file>`.
 - `ingest <path>` confines its scan root to the kb, like `okfy`; an out-of-tree
   path is refused with guidance.
