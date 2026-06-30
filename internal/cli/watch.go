@@ -41,6 +41,7 @@ func runWatch(cmd *cobra.Command, state *rootState, path, collection string) err
 			SecurityExclude: a.Config.SecurityExclude(),
 			Chunking:        chunk.ConfigFrom(a.Config.Chunking.TargetTokens, a.Config.Chunking.OverlapTokens),
 			StorageDir:      filepath.Dir(a.Layout.DB),
+			URIBase:         a.TreeRoot(), // URIs are kb-relative even when watching a subtree
 			MaxFileBytes:    a.Config.Indexing.MaxFileBytes,
 		})
 		if err != nil {

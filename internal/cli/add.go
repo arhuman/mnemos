@@ -73,6 +73,7 @@ func runAdd(cmd *cobra.Command, state *rootState, src, into, collection, mode st
 
 		opts := ingest.Options{
 			Root:       dest,
+			URIBase:    a.TreeRoot(), // URIs are kb-relative regardless of --into
 			Collection: collection,
 			Rules: ingest.Rules{
 				Include:         a.Config.Indexing.Include,

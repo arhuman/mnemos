@@ -30,7 +30,7 @@ func TestScanIncludeExcludeSecurity(t *testing.T) {
 		securityExclude: []string{"**/secrets/**"},
 	}
 
-	got, err := scan(root, rules)
+	got, err := scan(root, "", rules)
 	require.NoError(t, err)
 
 	uris := make([]string, 0, len(got))
@@ -46,7 +46,7 @@ func TestScanSingleFile(t *testing.T) {
 	writeFile(t, root, "only.md")
 	file := filepath.Join(root, "only.md")
 
-	got, err := scan(file, scanRules{include: []string{"**/*.md"}})
+	got, err := scan(file, "", scanRules{include: []string{"**/*.md"}})
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, "only.md", got[0].uri)
@@ -57,7 +57,7 @@ func TestScanSingleFileExcluded(t *testing.T) {
 	writeFile(t, root, "only.png")
 	file := filepath.Join(root, "only.png")
 
-	got, err := scan(file, scanRules{include: []string{"**/*.md"}})
+	got, err := scan(file, "", scanRules{include: []string{"**/*.md"}})
 	require.NoError(t, err)
 	require.Empty(t, got)
 }

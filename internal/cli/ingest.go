@@ -42,6 +42,7 @@ func runIngest(cmd *cobra.Command, state *rootState, path, collection string) er
 
 		opts := ingest.Options{
 			Root:       scanRoot,
+			URIBase:    a.TreeRoot(), // URIs are always relative to the kb root
 			Collection: collection,
 			Rules: ingest.Rules{
 				Include:         a.Config.Indexing.Include,
