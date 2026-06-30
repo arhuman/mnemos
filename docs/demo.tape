@@ -4,8 +4,10 @@
 #   vhs docs/demo.tape        # writes docs/demo.gif
 #
 # Tuned to the vendored examples/onpage-seo/bundle corpus (a real OKF bundle), so
-# it runs with no off-camera setup. The query "core web vitals" lands on a clean
-# top citation (technical/core-web-vitals.md). See .claude/doc/screencast_demo.md.
+# it runs with no off-camera setup. The workspace is created in examples/onpage-seo
+# and the bundle is brought into the kb with `add`; the query "core web vitals"
+# lands on a clean top citation (bundle/technical/core-web-vitals.md).
+# See .claude/doc/screencast_demo.md.
 #
 # NOTE: keep typed `#` comment lines apostrophe-free — a typed `'` opens a shell
 # quote (quote>) that swallows the command that follows.
@@ -24,8 +26,8 @@ Set TypingSpeed 55ms
 Hide
 Type "setopt INTERACTIVE_COMMENTS" Enter
 Type "export PROMPT='%F{cyan}mnemos ❯%f '" Enter
-Type "cd examples/onpage-seo/bundle" Enter
-Type "rm -rf .mnemos .mnemos.toml" Enter
+Type "cd examples/onpage-seo" Enter
+Type "rm -rf .mnemos" Enter
 Type "clear" Enter
 Show
 
@@ -39,10 +41,10 @@ Sleep 1000ms
 Type "# point it at a real OKF bundle: plain markdown with frontmatter"
 Enter
 Sleep 700ms
-Type "ls"
+Type "ls bundle"
 Enter
 Sleep 900ms
-Type "mnemos ingest . --collection seo"
+Type "mnemos add bundle --collection seo"
 Enter
 Sleep 1600ms
 

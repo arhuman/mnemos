@@ -203,7 +203,7 @@ binary. To enable it:
 
 ```bash
 make build-embed            # or: make install-embed  (still cgo-free, CGO_ENABLED=0)
-mnemos models install       # downloads an embedding model into ~/.mnemos/models
+mnemos models install       # downloads an embedding model into <MNEMOS_DIR>/models
 mnemos reindex --embeddings # compute vectors for already-indexed chunks
 mnemos search "why did we choose this architecture" --semantic
 ```
@@ -238,16 +238,16 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 | `mnemos ingest <kb-subpath> --collection <c>` | Re-index content already inside the kb |
 | `mnemos migrate --from <old> [--to <dir> --move]` | Relocate a pre-MNEMOS_DIR workspace into the kb/ layout and reindex |
 | `mnemos search <query> [--collection --path --type --since --limit --semantic --json]` | Search the index (`--semantic` fuses lexical + vector; needs the embed build) |
-| `mnemos ls [path] [--collection --type --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
+| `mnemos ls [path] [--collection --type --path --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
 | `mnemos eval <okf-bundle> [--baseline <f> --save --semantic --limit N]` | Retrieval-quality eval on an OKF bundle (`--semantic` evaluates the hybrid retriever) |
 | `mnemos watch <path> --collection <c>` | Watch and incrementally reindex |
 | `mnemos serve` | Run the MCP server (stdio) |
 | `mnemos status` | Show the workspace layout (anchor, kb, index db), counts, and FTS availability |
 | `mnemos version [-v]` | Print the version; `-v` adds commit, build date, and Go toolchain |
-| `mnemos models install` | Download an embedding model into `~/.mnemos/models` (for the embed build) |
+| `mnemos models install` | Download an embedding model into `<MNEMOS_DIR>/models` (for the embed build) |
 | `mnemos reindex --embeddings` | Recompute and store embedding vectors for all chunks |
 | `mnemos validate <bundle> [--json]` | Validate an OKF v0.1 bundle for conformance |
-| `mnemos task list` | List indexed Task documents grouped by status |
+| `mnemos task list [--status <s> --collection <c>]` | List indexed Task documents grouped by status |
 | `mnemos forget <path>` | Remove a file from the OKF tree and de-index it (requires `allow_delete = true`) |
 | `mnemos mv <src> <dst>` | Move a file or directory within the OKF tree and re-index it (requires `allow_delete = true`) |
 | `mnemos okfy <file> [--collection --type --tags --out --force]` | Convert a `.txt`/`.md` file into an OKF document, then index it (source is kept intact) |
@@ -275,10 +275,11 @@ overlap_tokens = 80
 
 [search]
 default_limit = 12
+use_vectors = false        # serve uses hybrid retrieval (the serve-side --semantic; needs the embed build)
 
 [mcp]
 transport = "stdio"
-allow_write = false        # gates mnemos.remember
+allow_write = false        # gates mnemos.remember and mnemos.okfy
 allow_delete = false       # gates mnemos.forget and mnemos.move
 
 [capture]
@@ -299,7 +300,7 @@ land, and the idempotency/URI rules: see
 
 - No network, no telemetry; the MCP server is stdio-only.
 - Read-only by default. Write-back is opt-in (`allow_write = true`). Destructive operations (forget, move) require a separate opt-in (`allow_delete = true`).
-- All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the tree root, symlink escapes, access to `.mnemos/`, and `[security].exclude` globs are all rejected.
+- All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the kb, symlink escapes, and `[security].exclude` globs are all rejected. The index database and models live outside the kb, so they are unreachable by any write or delete tool.
 - Captured content is secret-scanned before it is written or indexed.
 - Path/secret exclusion patterns keep `.env`, keys, and secret dirs out of the index.
 
