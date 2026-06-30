@@ -1,70 +1,84 @@
 # Paths, indexing, and writes
 
-mnemos operates inside one project directory. Three path ideas are worth keeping
-straight: where state lives, what gets indexed, and where writes go.
+mnemos operates out of one anchor directory, the **MNEMOS_DIR**. Everything it
+reads and writes is a fixed subpath of it; nothing is configured by path.
 
-## Citations are relative to the scan root
+## The workspace layout
 
-`search` (and the `mnemos.read` / `move` / `forget` tools) cite documents by their
-**URI = the path relative to the scan root you passed to `ingest`**, not your
-current working directory. So after `mnemos ingest docs`, a hit prints as
-`security/scim.md#Provisioning` (relative to `docs/`), not `docs/security/scim.md`.
+```
+<MNEMOS_DIR>/            # default ~/.mnemos ; or a project-local ./.mnemos
+  mnemos.toml           # configuration (behaviour only — no location keys)
+  kb/                   # the knowledge base: tree root, URI namespace, write boundary
+    capture/            # auto-named notes from `remember` (URIs: capture/<file>)
+    <your content>      # everything URI-addressable lives here
+  state/
+    index.db            # SQLite + FTS — derived state, outside the URI namespace
+  models/               # embedding models
+```
 
-## Workspace root: where state lives
+The **kb** is the single source of identity: a document's URI is its path relative
+to `kb/`, and every write (capture, okfy, forget, move) is confined within it. The
+database and models live in the MNEMOS_DIR but **outside** `kb/`, so they are never
+indexed or addressable.
 
-`mnemos init` writes `./.mnemos.toml` and `./.mnemos/` in the current directory.
-Every command auto-discovers config from `~/.mnemos.toml` then `./.mnemos.toml`
-(project wins) and resolves a relative `[storage].path` (default
-`.mnemos/mnemos.db`) **against the tree root**: the current directory in
-auto-discovery mode, or the `--config` file's directory when you pass one. So a
-bare command works from the project root, and an absolute
-`--config /abs/path/.mnemos.toml` works from any working directory without needing
-an absolute `[storage].path`.
+## How the MNEMOS_DIR is chosen
 
-Read commands (`search`, `serve`, `status`, `ls`, …) fail with an actionable error
-rather than silently creating an empty database when the store is missing; run
-`mnemos init` or `mnemos ingest` first. A single database file holds all
-collections; there is no global/shared store.
+Resolution precedence, highest first:
 
-## What gets indexed
+1. `--config <file>` — an explicit `mnemos.toml`; its directory is the MNEMOS_DIR.
+2. `--mnemos-dir <dir>` — an explicit anchor.
+3. `$MNEMOS_DIR` — the environment variable.
+4. **Project mode**: the nearest `./.mnemos` found by walking up from the current
+   directory, bounded by the git root (an unrelated parent's `.mnemos` is never
+   inherited).
+5. **Global default**: `~/.mnemos`.
 
-`mnemos ingest <path>` (and `mnemos watch <path>`) scans `<path>` and indexes files
-matching `[indexing].include` (default `**/*.md`, `**/*.txt`, `**/*.go`, `**/*.sql`),
-minus `[indexing].exclude` (`.git`, `node_modules`, `vendor`, `dist`), minus the
-`[security].exclude` globs (`**/.env`, `**/*.pem`, …) while `exclude_secrets` is on.
-Binary / non-UTF-8 files are skipped. A document's identity is its
-**URI = the path relative to the scan root you passed to `ingest`**:
+`status` always prints the resolved anchor and how it was chosen, so a command can
+never silently act on the wrong workspace. Because the anchor is absolute (or
+discovered, not cwd-relative), an MCP server started in an unknown directory still
+finds the right data.
 
-- `mnemos ingest docs` stores `security/scim.md` (relative to `docs/`),
-- `mnemos ingest .` stores `docs/security/scim.md` (relative to the project root).
+## Getting content in
 
-Citations and the `mnemos.read` / `move` / `forget` tools all use that URI.
+mnemos is a managed store: addressable content lives under `kb/`, and you put it
+there explicitly.
 
-## Where writes go (CLI + MCP)
+- **`mnemos init`** scaffolds a project-local `./.mnemos`; `mnemos init --global`
+  scaffolds `~/.mnemos`.
+- **`mnemos add <source> [--into <subpath>] [--mode copy|link]`** brings external
+  content into the kb — copied (a snapshot) by default, or symlinked — and indexes
+  it. `--into` places it at a chosen subpath; otherwise it lands at the source's
+  base name.
+- **`mnemos ingest <kb-subpath>`** re-indexes content already inside the kb. A path
+  outside the kb is refused (it would mint URIs that `read`/`ls`/`move` cannot
+  resolve).
+- **`mnemos remember`** (MCP/CLI) writes a note under `kb/capture/`.
+- **`mnemos okfy <kb-file>`** converts an in-kb `.txt`/`.md` into an OKF document.
 
-Write/delete operations are confined to the **tree root**: your working directory
-by default (auto-discovery mode); with `--config`, the config file's directory.
-Every caller-supplied path is validated before any disk operation (`..`, symlink
-escape, absolute-outside-root, `.mnemos/`, and `[security].exclude` are all
-rejected). Within that root:
+A document's `collection:` frontmatter is authoritative; the `--collection` flag is
+only the fallback for files that don't declare one. This keeps collections stable
+across re-indexes.
 
-- `remember` writes under `[capture].dir` (default `.mnemos/capture`) when you
-  don't pass an explicit `path`; with a `path` it writes there. Requires `allow_write`.
-- `okfy` writes the converted `.md` at `out`. Requires `allow_write`.
-- `forget` / `move` act on existing tree files. Require `allow_delete`.
+## URIs and citations
+
+`search` (and `read` / `move` / `forget`) cite documents by their **URI**. Citations
+look like `security/scim.md#Provisioning` with line ranges. URIs are unique
+store-wide, so two files that would resolve to the same relative path collide — the
+later ingest wins. Keeping all content under one `kb/` and adding it at distinct
+subpaths keeps URIs distinct.
+
+## Migrating an older workspace
+
+Pre-MNEMOS_DIR workspaces kept content at a config-derived tree root with the DB in
+`.mnemos/`. `mnemos migrate --from <old-root-or-config> [--to <dir>] [--move]`
+relocates that content under `<dir>/kb` (old capture under `kb/capture`) and
+reindexes. It copies by default — the source is left intact until you pass `--move`.
+Original collections survive the reindex wherever documents carry a `collection:`
+frontmatter.
 
 ## Running it more than once
 
-- **Same path + collection is idempotent:** unchanged files are skipped by content
-  hash; changed files are re-indexed in place. Re-run freely.
-- **One store, many runs:** every `ingest` / `watch` / `serve` shares the one
-  `[storage].path` database. `watch` (and `forget`/`move`) also remove deletions; a
-  bare re-`ingest` only adds/updates.
-- **Different paths: mind the URI.** URIs are **unique store-wide**. If two scan
-  roots contain a file with the *same relative path* (e.g. each has `index.md`),
-  they resolve to the same URI and the **later ingest overwrites the earlier one**.
-  To index several trees cleanly, ingest them from one common root
-  (`mnemos ingest .`) so their URIs stay distinct, rather than ingesting each
-  subdirectory separately. Collections are labels you filter on, not isolated path
-  namespaces.
-</content>
+- **Idempotent:** unchanged files are skipped by content hash; changed files are
+  re-indexed in place. Re-run freely.
+- **One store:** every command shares the one `state/index.db`. `watch` (and
+  `forget`/`move`) also remove deletions; a bare re-`ingest`/`add` only adds/updates.

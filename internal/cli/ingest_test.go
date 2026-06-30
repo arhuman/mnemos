@@ -92,6 +92,23 @@ func TestIngestRejectsOutsideTreeRoot(t *testing.T) {
 	require.Contains(t, err.Error(), "outside the tree root")
 }
 
+// TestIngestHonorsFrontmatterCollection asserts a document's own collection:
+// frontmatter wins over the --collection flag, so a re-index preserves it.
+func TestIngestHonorsFrontmatterCollection(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	seedKB(t, "doc.md", "---\ntype: note\ncollection: epfl\n---\n# Doc\n\nfindable body content\n")
+	runCmd(t, "ingest", ".", "--collection", "flagcoll")
+
+	// The document is filed under epfl (frontmatter), not flagcoll (flag).
+	hit := runCmd(t, "search", "findable body content", "--collection", "epfl")
+	require.Contains(t, hit, "doc.md")
+
+	miss := runCmd(t, "search", "findable body content", "--collection", "flagcoll")
+	require.NotContains(t, miss, "doc.md")
+}
+
 // count runs a scalar COUNT query and returns the integer result.
 func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()

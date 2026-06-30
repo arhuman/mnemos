@@ -4,7 +4,12 @@ Date: 2026-06-30
 
 ## Status
 
-Accepted (implementation phased — see Consequences).
+Accepted (implementation phased — see Consequences). Phase 1 (tree-root anchoring
+of capture/ingest) and Phase 2 (the `MNEMOS_DIR` model, `mnemos add`, and
+`mnemos migrate`) have landed. Ingestion now also honors `collection:` frontmatter
+so a re-index preserves collections. Remaining: making URIs fully kb-relative
+(today they stay relative to the scan root within the kb), and the `index-only`
+external-source mode (Phase 3).
 
 Supersedes the location half of the layered-config model in
 [0002](0002-okf-tree-write-delete-move.md) (the confinement validator and the
