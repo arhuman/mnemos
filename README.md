@@ -234,7 +234,7 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 | Command | Purpose |
 |---|---|
 | `mnemos init [--global]` | Scaffold a MNEMOS_DIR (`./.mnemos` by default, `~/.mnemos` with `--global`) |
-| `mnemos add <source> [--into <subpath> --mode copy\|link --collection <c>]` | Copy/link external content into the kb and index it |
+| `mnemos add <source> [--into <subpath> --mode copy\|link --collection <c>]` | Bring external content into the kb and index it (`copy` snapshots; `link` symlinks a single file) |
 | `mnemos ingest <kb-subpath> --collection <c>` | Re-index content already inside the kb |
 | `mnemos migrate --from <old> [--to <dir> --move]` | Relocate a pre-MNEMOS_DIR workspace into the kb/ layout and reindex |
 | `mnemos search <query> [--collection --path --type --since --limit --semantic --json]` | Search the index (`--semantic` fuses lexical + vector; needs the embed build) |

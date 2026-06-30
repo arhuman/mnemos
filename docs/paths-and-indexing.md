@@ -46,9 +46,10 @@ there explicitly.
 - **`mnemos init`** scaffolds a project-local `./.mnemos`; `mnemos init --global`
   scaffolds `~/.mnemos`.
 - **`mnemos add <source> [--into <subpath>] [--mode copy|link]`** brings external
-  content into the kb — copied (a snapshot) by default, or symlinked — and indexes
-  it. `--into` places it at a chosen subpath; otherwise it lands at the source's
-  base name.
+  content into the kb and indexes it. `--mode copy` (default) snapshots it into the
+  kb; `--mode link` symlinks a **single file** (a directory cannot be linked in
+  place yet — that is the planned external-source feature). `--into` places it at a
+  chosen subpath; otherwise it lands at the source's base name.
 - **`mnemos ingest <kb-subpath>`** re-indexes content already inside the kb. A path
   outside the kb is refused (it would mint URIs that `read`/`ls`/`move` cannot
   resolve).
