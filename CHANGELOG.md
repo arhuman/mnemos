@@ -71,8 +71,9 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   Resolved by precedence: `--config` > `--mnemos-dir` > `$MNEMOS_DIR` > project
   `./.mnemos` (discovered up to the git root) > the `~/.mnemos` default.
 - `mnemos add <source> [--into <subpath>] [--mode copy|link]`: brings external
-  content into the knowledge base (copy by default, or symlink) and indexes it —
-  the managed-store entry point.
+  content into the knowledge base and indexes it — the managed-store entry point.
+  `copy` (default) snapshots; `link` symlinks a single file. (In-place directory
+  linking is deferred to the external-source feature.)
 - `mnemos init --global` initializes `~/.mnemos`; bare `init` creates a
   project-local `./.mnemos`.
 - `mnemos migrate --from <old> [--to <dir>] [--move]`: relocates a pre-MNEMOS_DIR

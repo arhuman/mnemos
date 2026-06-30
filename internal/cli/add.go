@@ -61,6 +61,14 @@ func runAdd(cmd *cobra.Command, state *rootState, src, into, collection, mode st
 				return fmt.Errorf("add: copy: %w", err)
 			}
 		case "link":
+			// A symlinked directory cannot be indexed in place yet: WalkDir does not
+			// descend into it, the confinement guard rejects symlink escapes (so
+			// read/move would fail), and ls would not list its contents. Indexing an
+			// external directory in place is the Phase 3 "external source" feature
+			// (see ADR 0005); for now link is single-file only.
+			if srcInfo.IsDir() {
+				return fmt.Errorf("add: --mode link supports a single file, not a directory (%q); use --mode copy, or wait for external-source support", src)
+			}
 			if err = os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 				return fmt.Errorf("add: link: %w", err)
 			}

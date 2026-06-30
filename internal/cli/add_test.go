@@ -51,6 +51,32 @@ func TestAddMintsKBRelativeURIs(t *testing.T) {
 	require.Contains(t, out, `"uri": "work/deep.md"`)
 }
 
+func TestAddLinkFileWorks(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "linked.md"), []byte("# Linked\n\nlinkable body omega\n"), 0o644))
+
+	out := runCmd(t, "add", filepath.Join(ext, "linked.md"), "--mode", "link")
+	require.Contains(t, out, "files ingested:  1")
+
+	hit := runCmd(t, "search", "linkable body omega")
+	require.Contains(t, hit, "linked.md")
+}
+
+func TestAddLinkDirRejected(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "a.md"), []byte("# A\n\nbody\n"), 0o644))
+
+	_, err := runCmdErr(t, "add", ext, "--mode", "link")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "single file, not a directory")
+}
+
 func TestAddRejectsDestOutsideKB(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")

@@ -107,8 +107,11 @@ moves from "index files in place" to "put content into the store":
 
 - **`mnemos add <src> [--into <kb-subpath>] [--mode copy|link] [--collection name]`**:
   `--mode copy` (default) copies `<src>` into `$MNEMOS_DIR/kb/<subpath>` then
-  indexes; `--mode link` symlinks instead (zero-copy, for indexing a repo without
-  duplicating it). URI is always relative to `kb/`. Idempotent by content hash.
+  indexes; `--mode link` symlinks a single file (zero-copy). Linking a whole
+  directory in place is deferred to the external-source feature (Phase 3): a
+  symlinked directory is not walked, and the confinement guard rejects symlink
+  escapes, so `read`/`move` would break. URI is always relative to `kb/`.
+  Idempotent by content hash.
   `--into` is **required** when `<src>` is a directory (or otherwise risks a URI
   collision); a future option may auto-namespace (e.g. `repos/<org>/<repo>/`).
 - **`mnemos.remember` / `okfy` / `forget` / `move`**: unchanged in spirit; all act
