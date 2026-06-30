@@ -95,3 +95,21 @@ func TestMigrateFromConfigFileSkipsConfig(t *testing.T) {
 	require.FileExists(t, filepath.Join(to, "kb", "note.md"))
 	require.NoFileExists(t, filepath.Join(to, "kb", "old.toml")) // the config is not relocated
 }
+
+// TestMigrateRelocateUnreadableEntry exercises transfer's copy-failure branch:
+// when a source file under a top-level entry cannot be read, relocateContent
+// surfaces the error rather than silently producing an incomplete kb.
+func TestMigrateRelocateUnreadableEntry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file mode bits do not restrict access")
+	}
+	old := oldWorkspace(t)
+	note := filepath.Join(old, "pro", "epfl", "note.md")
+	require.NoError(t, os.Chmod(note, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(note, 0o644) })
+
+	to := filepath.Join(t.TempDir(), ".mnemos")
+	_, err := runCmdErr(t, "migrate", "--from", old, "--to", to)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "relocate")
+}
