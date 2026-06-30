@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -33,13 +32,9 @@ func runServe(cmd *cobra.Command, state *rootState) error {
 			a.Logger.Warn("unsupported mcp transport, falling back to stdio", "transport", t)
 		}
 
-		// Reject an absolute capture.dir: URIs for auto-named notes are derived from
-		// the path directly (filepath.ToSlash(captureDir+filename)), so an absolute
-		// directory would produce absolute-path URIs that break the tree-root-relative
-		// citation contract. Relative paths (the default ".mnemos/capture") are safe.
-		if a.Config.MCP.AllowWrite && filepath.IsAbs(a.Config.Capture.Dir) {
-			return fmt.Errorf("serve: [capture].dir must be a relative path; got absolute %q — set it relative to the tree root in .mnemos.toml", a.Config.Capture.Dir)
-		}
+		// [capture].dir is validated and anchored to the tree root at load time
+		// (config.Validate / CaptureLocation): an absolute value inside the tree is
+		// accepted, one that escapes is rejected. No serve-local check is needed.
 
 		// Build the retriever once for the server's lifetime. [search].use_vectors
 		// selects hybrid lexical+vector retrieval; buildRetriever degrades to

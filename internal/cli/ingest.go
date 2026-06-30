@@ -8,6 +8,7 @@ import (
 	"github.com/arhuman/mnemos/internal/app"
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/ingest"
+	"github.com/arhuman/mnemos/internal/security"
 )
 
 // newIngestCmd builds the `ingest <path> --collection <name>` command, which
@@ -30,8 +31,17 @@ func newIngestCmd(state *rootState) *cobra.Command {
 
 func runIngest(cmd *cobra.Command, state *rootState, path, collection string) error {
 	return withStore(state, true, func(a *app.App) error {
+		// Confine the scan root to the tree root: ingesting a path outside it
+		// would mint URIs whose files live where read/ls/move (all tree-root
+		// anchored) cannot resolve them. okfy already confines its source the
+		// same way; this closes the gap for bulk ingest.
+		scanRoot, err := security.ConfineDir(a.TreeRoot(), path)
+		if err != nil {
+			return fmt.Errorf("ingest: %w; copy the content into the tree first, then ingest it from there", err)
+		}
+
 		opts := ingest.Options{
-			Root:       path,
+			Root:       scanRoot,
 			Collection: collection,
 			Rules: ingest.Rules{
 				Include:         a.Config.Indexing.Include,

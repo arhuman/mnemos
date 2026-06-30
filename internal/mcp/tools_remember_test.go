@@ -26,16 +26,21 @@ func emptyStore(t *testing.T) *sql.DB {
 	return db
 }
 
-// writeConfig builds an enabled write config pointing capture at a temp dir.
+// writeConfig builds an enabled write config with capture inside the tree root
+// (the invariant capture.dir must satisfy: it lives within the tree root so its
+// notes carry a tree-root-relative URI).
 func writeConfig(t *testing.T) srvCfg {
 	t.Helper()
+
+	root := t.TempDir()
 
 	return srvCfg{
 		cfg: &config.Config{
 			MCP:      config.MCPConfig{AllowWrite: true},
-			Capture:  config.CaptureConfig{Dir: filepath.Join(t.TempDir(), ".mnemos", "capture")},
+			Capture:  config.CaptureConfig{Dir: filepath.Join(root, ".mnemos", "capture")},
 			Chunking: config.ChunkingConfig{TargetTokens: 700, OverlapTokens: 80},
 		},
+		treeRoot: root,
 	}
 }
 

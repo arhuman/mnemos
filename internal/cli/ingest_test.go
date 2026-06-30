@@ -79,6 +79,21 @@ func TestIngestPopulatesStore(t *testing.T) {
 	})
 }
 
+// TestIngestRejectsOutsideTreeRoot asserts that a scan root outside the tree
+// root is refused (it would mint URIs whose files read/ls/move cannot resolve).
+func TestIngestRejectsOutsideTreeRoot(t *testing.T) {
+	workdir := t.TempDir()
+	chdir(t, workdir)
+	runCmd(t, "init")
+
+	outside := t.TempDir()
+	writeTree(t, outside, "a.md", "# Outside\n")
+
+	_, err := runCmdErr(t, "ingest", outside, "--collection", "demo")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the tree root")
+}
+
 // count runs a scalar COUNT query and returns the integer result.
 func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()

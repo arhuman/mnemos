@@ -64,6 +64,10 @@ func Load(configPath string, verbose bool) (*App, error) {
 		cfg.Storage.Path = filepath.Clean(filepath.Join(treeRoot, cfg.Storage.Path))
 	}
 
+	if err := cfg.Validate(treeRoot); err != nil {
+		return nil, err
+	}
+
 	return &App{
 		Config:   cfg,
 		Logger:   NewLogger(verbose),

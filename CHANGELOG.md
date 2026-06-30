@@ -64,5 +64,19 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Version metadata stamped via `-ldflags -X` (`mnemos version -v`).
 - Optional Claude Code `mnemos-okf` skill bundled under `skills/`.
 
+### Changed
+- `[capture].dir` is validated and anchored to the tree root at load time
+  (`config.Validate` / `CaptureLocation`), shared by every command. An absolute
+  value inside the tree root is now accepted; auto-named notes write to the
+  tree-root-anchored directory (not the process cwd) and still cite a
+  tree-root-relative URI. See ADR 0005 (Phase 1).
+- `ingest <path>` confines its scan root to the tree root, like `okfy`. A path
+  outside the tree is refused with guidance instead of minting URIs that
+  `read`/`ls`/`move` cannot resolve.
+
+### Fixed
+- The MCP server no longer refuses to start when `[capture].dir` is an absolute
+  path inside the tree root; only a capture dir that escapes the tree is rejected.
+
 [Unreleased]: https://github.com/arhuman/mnemos/commits/main
 </content>
