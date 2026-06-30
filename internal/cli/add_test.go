@@ -126,3 +126,40 @@ func TestAddSourceNotFound(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "source")
 }
+
+// TestAddCopyFileDestIsDir exercises copyFile's open-destination failure: when a
+// directory already occupies the destination path, opening it for writing fails.
+func TestAddCopyFileDestIsDir(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	// A directory already sits where the copied file would land.
+	require.NoError(t, os.MkdirAll(kbPath("clash"), 0o750))
+
+	ext := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "f.md"), []byte("# F\n\nbody\n"), 0o644))
+
+	_, err := runCmdErr(t, "add", filepath.Join(ext, "f.md"), "--into", "clash")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "copy")
+}
+
+// TestAddSourceFileUnreadable exercises copyFile's open-source failure: a source
+// whose mode bits deny reads cannot be copied into the kb.
+func TestAddSourceFileUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: file mode bits do not restrict access")
+	}
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	src := filepath.Join(ext, "secret.md")
+	require.NoError(t, os.WriteFile(src, []byte("# S\n\nbody\n"), 0o644))
+	require.NoError(t, os.Chmod(src, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(src, 0o644) })
+
+	_, err := runCmdErr(t, "add", src)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "copy")
+}

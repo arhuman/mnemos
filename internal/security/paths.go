@@ -16,10 +16,13 @@ import (
 // resolved location must stay strictly under root.
 //
 // It is the single guard for every write/delete the agent can trigger
-// (mnemos.remember custom path, forget, move). It rejects, in order:
+// (mnemos.remember custom path, forget, move). Root is the kb (the URI
+// namespace); the index db and models live outside it by construction. It
+// rejects, in order:
 //   - traversal that escapes root (a "../" prefix after cleaning),
 //   - a path that resolves to root itself (not a file),
-//   - the internal ".mnemos/" directory (db, capture sandbox),
+//   - a path under a reserved ".mnemos/" directory (defense in depth against a
+//     nested anchor; the db and models already sit outside the kb),
 //   - any URI matching an exclude glob (the [security].exclude set),
 //   - symlink escape: the deepest existing ancestor is resolved with
 //     EvalSymlinks and re-checked for containment, so a symlink pointing
