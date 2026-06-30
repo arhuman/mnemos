@@ -101,7 +101,12 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 
 	parsed, err := parse.For(f.absPath).Parse(ctx, src)
 	if err != nil {
-		return result{}, fmt.Errorf("ingest: parse %q: %w", f.uri, err)
+		// A single malformed file (e.g. broken YAML frontmatter) must not abort a
+		// batch ingest of many documents; skip it with a warning, as with binary
+		// files. The batch then indexes everything it can.
+		p.logger.Warn("ingest skip unparseable file", "uri", f.uri, "error", err)
+
+		return result{skip: true}, nil
 	}
 
 	// An OKF document's own `collection:` frontmatter is authoritative; the
