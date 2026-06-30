@@ -19,7 +19,7 @@ import (
 func newFixtureWith(t *testing.T, mutate func(*config.Config)) fixture {
 	t.Helper()
 
-	cfg, err := config.Load(nil, func(string) bool { return false })
+	cfg, err := config.Load("", func(string) bool { return false })
 	require.NoError(t, err)
 	mutate(cfg)
 

@@ -64,19 +64,32 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Version metadata stamped via `-ldflags -X` (`mnemos version -v`).
 - Optional Claude Code `mnemos-okf` skill bundled under `skills/`.
 
-### Changed
-- `[capture].dir` is validated and anchored to the tree root at load time
-  (`config.Validate` / `CaptureLocation`), shared by every command. An absolute
-  value inside the tree root is now accepted; auto-named notes write to the
-  tree-root-anchored directory (not the process cwd) and still cite a
-  tree-root-relative URI. See ADR 0005 (Phase 1).
-- `ingest <path>` confines its scan root to the tree root, like `okfy`. A path
-  outside the tree is refused with guidance instead of minting URIs that
-  `read`/`ls`/`move` cannot resolve.
+### Added
+- Single `MNEMOS_DIR` workspace model (ADR 0005, Phase 2): one anchor from which
+  every location derives — `kb/` (the knowledge base: tree root, URI namespace,
+  write boundary), `kb/capture/`, `state/index.db`, `models/`, `mnemos.toml`.
+  Resolved by precedence: `--config` > `--mnemos-dir` > `$MNEMOS_DIR` > project
+  `./.mnemos` (discovered up to the git root) > the `~/.mnemos` default.
+- `mnemos add <source> [--into <subpath>] [--mode copy|link]`: brings external
+  content into the knowledge base (copy by default, or symlink) and indexes it —
+  the managed-store entry point.
+- `mnemos init --global` initializes `~/.mnemos`; bare `init` creates a
+  project-local `./.mnemos`.
+- Root flag `--mnemos-dir`; `status` now reports the effective workspace (anchor,
+  resolution source, kb root, index db).
 
-### Fixed
-- The MCP server no longer refuses to start when `[capture].dir` is an absolute
-  path inside the tree root; only a capture dir that escapes the tree is rejected.
+### Changed
+- Configuration carries behaviour only (`[indexing]`, `[chunking]`, `[search]`,
+  `[mcp]`, `[capture].defer_to_watcher`, `[security]`). All content and state
+  locations are derived from `MNEMOS_DIR`, not configured.
+- Capture is the fixed `kb/capture` subdirectory; notes cite `capture/<file>`.
+- `ingest <path>` confines its scan root to the kb, like `okfy`; an out-of-tree
+  path is refused with guidance.
+
+### Removed
+- Config keys `[storage].path` and `[capture].dir`, and the layered
+  `~/.mnemos.toml` + `./.mnemos.toml` discovery — superseded by the single
+  `MNEMOS_DIR`/`mnemos.toml` workspace.
 
 [Unreleased]: https://github.com/arhuman/mnemos/commits/main
 </content>

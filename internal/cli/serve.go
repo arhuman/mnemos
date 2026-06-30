@@ -47,7 +47,7 @@ func runServe(cmd *cobra.Command, state *rootState) error {
 		srv := mcp.NewServer(a.DB, retriever, a.Config, a.TreeRoot(), security.NewRegexScanner(), a.Logger)
 
 		if a.Config.MCP.AllowWrite {
-			a.Logger.Info("mcp write-back enabled", "capture_dir", a.Config.Capture.Dir)
+			a.Logger.Info("mcp write-back enabled", "capture_dir", a.Layout.Capture)
 		}
 		if a.Config.MCP.AllowDelete {
 			a.Logger.Info("mcp delete/move enabled", "tree_root", a.TreeRoot())

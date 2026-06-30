@@ -40,7 +40,7 @@ func runWatch(cmd *cobra.Command, state *rootState, path, collection string) err
 			Exclude:         a.Config.Indexing.Exclude,
 			SecurityExclude: a.Config.SecurityExclude(),
 			Chunking:        chunk.ConfigFrom(a.Config.Chunking.TargetTokens, a.Config.Chunking.OverlapTokens),
-			StorageDir:      filepath.Dir(a.Config.Storage.Path),
+			StorageDir:      filepath.Dir(a.Layout.DB),
 			MaxFileBytes:    a.Config.Indexing.MaxFileBytes,
 		})
 		if err != nil {

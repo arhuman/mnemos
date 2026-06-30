@@ -25,11 +25,11 @@ func runCmdErr(t *testing.T, args ...string) (string, error) {
 	return out.String(), err
 }
 
-// enableDelete writes a config in the current dir that turns on allow_delete
-// while keeping all other defaults (koanf layers the file over the defaults).
+// enableDelete overwrites the workspace config to turn on allow_delete while
+// keeping all other defaults (koanf layers the file over the defaults).
 func enableDelete(t *testing.T) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(".mnemos.toml", []byte("[mcp]\nallow_delete = true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(".mnemos", "mnemos.toml"), []byte("[mcp]\nallow_delete = true\n"), 0o644))
 }
 
 func TestForgetCLIRemovesFileAndIndex(t *testing.T) {
@@ -37,13 +37,12 @@ func TestForgetCLIRemovesFileAndIndex(t *testing.T) {
 	runCmd(t, "init")
 	enableDelete(t)
 
-	require.NoError(t, os.MkdirAll("tech", 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join("tech", "note.md"), []byte("# Note\n\nContent.\n"), 0o644))
+	seedKB(t, filepath.Join("tech", "note.md"), "# Note\n\nContent.\n")
 	runCmd(t, "ingest", ".", "--collection", "tech")
 
 	out := runCmd(t, "forget", "tech/note.md")
 	require.Contains(t, out, "forgot tech/note.md")
-	require.NoFileExists(t, filepath.Join("tech", "note.md"))
+	require.NoFileExists(t, kbPath(filepath.Join("tech", "note.md")))
 
 	status := runCmd(t, "status")
 	require.Regexp(t, `documents\s+0`, status)
@@ -64,14 +63,13 @@ func TestMvCLIMovesAndReindexes(t *testing.T) {
 	runCmd(t, "init")
 	enableDelete(t)
 
-	require.NoError(t, os.MkdirAll("perso", 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join("perso", "note.md"), []byte("# Note\n\nMovable.\n"), 0o644))
+	seedKB(t, filepath.Join("perso", "note.md"), "# Note\n\nMovable.\n")
 	runCmd(t, "ingest", ".", "--collection", "perso")
 
 	out := runCmd(t, "mv", "perso/note.md", "tech/note.md")
 	require.Contains(t, out, "moved perso/note.md -> tech/note.md")
-	require.NoFileExists(t, filepath.Join("perso", "note.md"))
-	require.FileExists(t, filepath.Join("tech", "note.md"))
+	require.NoFileExists(t, kbPath(filepath.Join("perso", "note.md")))
+	require.FileExists(t, kbPath(filepath.Join("tech", "note.md")))
 }
 
 func TestMvCLIMovesDirectory(t *testing.T) {
@@ -79,17 +77,16 @@ func TestMvCLIMovesDirectory(t *testing.T) {
 	runCmd(t, "init")
 	enableDelete(t)
 
-	require.NoError(t, os.MkdirAll(filepath.Join("adr", "sub"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join("adr", "one.md"), []byte("# One\n\nbody.\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join("adr", "sub", "two.md"), []byte("# Two\n\nbody.\n"), 0o644))
+	seedKB(t, filepath.Join("adr", "one.md"), "# One\n\nbody.\n")
+	seedKB(t, filepath.Join("adr", "sub", "two.md"), "# Two\n\nbody.\n")
 	runCmd(t, "ingest", ".", "--collection", "arch")
 
 	out := runCmd(t, "mv", "adr", "archive")
 	require.Contains(t, out, "moved adr/ -> archive/")
 	require.Contains(t, out, "2 files re-indexed")
-	require.NoDirExists(t, "adr")
-	require.FileExists(t, filepath.Join("archive", "one.md"))
-	require.FileExists(t, filepath.Join("archive", "sub", "two.md"))
+	require.NoDirExists(t, kbPath("adr"))
+	require.FileExists(t, kbPath(filepath.Join("archive", "one.md")))
+	require.FileExists(t, kbPath(filepath.Join("archive", "sub", "two.md")))
 
 	// Both files are searchable under their new uris.
 	ls := runCmd(t, "ls", "--path", "archive", "--json")
@@ -102,8 +99,8 @@ func TestMvCLIWarnsOnInboundLinks(t *testing.T) {
 	runCmd(t, "init")
 	enableDelete(t)
 
-	require.NoError(t, os.WriteFile("target.md", []byte("# Target\n\nbody.\n"), 0o644))
-	require.NoError(t, os.WriteFile("linker.md", []byte("# Linker\n\nSee [target](target.md).\n"), 0o644))
+	seedKB(t, "target.md", "# Target\n\nbody.\n")
+	seedKB(t, "linker.md", "# Linker\n\nSee [target](target.md).\n")
 	runCmd(t, "ingest", ".", "--collection", "c")
 
 	out := runCmd(t, "mv", "target.md", "moved.md")
@@ -145,7 +142,7 @@ func TestMvCLIRejectsTraversalDest(t *testing.T) {
 	runCmd(t, "init")
 	enableDelete(t)
 
-	require.NoError(t, os.WriteFile("a.md", []byte("# A\n\nbody.\n"), 0o644))
+	seedKB(t, "a.md", "# A\n\nbody.\n")
 	runCmd(t, "ingest", ".", "--collection", "c")
 
 	_, err := runCmdErr(t, "mv", "a.md", "../escape.md")
@@ -159,11 +156,11 @@ func TestMvCLISourceNotIndexedUsesDefault(t *testing.T) {
 	enableDelete(t)
 
 	// File on disk but never ingested: mv relocates and indexes under "default".
-	require.NoError(t, os.WriteFile("loose.md", []byte("# Loose\n\nbody.\n"), 0o644))
+	seedKB(t, "loose.md", "# Loose\n\nbody.\n")
 
 	out := runCmd(t, "mv", "loose.md", "kept.md")
 	require.Contains(t, out, "moved loose.md -> kept.md")
-	require.FileExists(t, "kept.md")
+	require.FileExists(t, kbPath("kept.md"))
 }
 
 func TestForgetCLIIdempotentOnMissing(t *testing.T) {

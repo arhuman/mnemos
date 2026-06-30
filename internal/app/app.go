@@ -1,5 +1,5 @@
-// Package app wires together the mnemos configuration, logger, and storage
-// into a single App value shared across CLI commands.
+// Package app wires together the mnemos workspace layout, configuration,
+// logger, and storage into a single App value shared across CLI commands.
 package app
 
 import (
@@ -10,22 +10,20 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/arhuman/mnemos/internal/config"
 	"github.com/arhuman/mnemos/internal/storage"
+	"github.com/arhuman/mnemos/internal/workspace"
 )
 
-// App holds the process-wide dependencies: parsed configuration, a structured
-// logger, and an open database handle. Commands receive a built App rather than
-// reaching for globals.
+// App holds the process-wide dependencies: the resolved workspace layout, parsed
+// configuration, a structured logger, and an open database handle. Commands
+// receive a built App rather than reaching for globals.
 type App struct {
 	Config *config.Config
+	Layout workspace.Layout
 	Logger *slog.Logger
 	DB     *sql.DB
-	// treeRoot is the writable tree root for capture/forget/move, resolved at
-	// load time from the config source (see config.Resolve and TreeRoot).
-	treeRoot string
 }
 
 // NewLogger returns a slog text logger writing to stderr. When verbose is set
@@ -40,72 +38,80 @@ func NewLogger(verbose bool) *slog.Logger {
 	return slog.New(handler)
 }
 
-// Load builds an App: it resolves and layers configuration (defaults, then
-// ~/.mnemos.toml and ./.mnemos.toml, or the explicit configPath when set) and
-// constructs the logger. It does NOT open the database; call OpenStore once the
-// storage path is known and the directory exists.
-//
-// A relative [storage].path is resolved here, once, against the same tree root
-// as capture/forget/move (the --config directory, or the current directory in
-// auto-discovery mode) so the stored path is absolute and every command, log
-// line, and error message shares a single source of truth. Without this, a
-// relative path silently followed the process cwd — which, for an MCP stdio
-// server launched by a client, is not the project directory.
-func Load(configPath string, verbose bool) (*App, error) {
-	home, _ := os.UserHomeDir()
-	paths, treeRoot := config.Resolve(configPath, home)
+// LoadOptions carries the workspace-selection inputs from the root flags.
+type LoadOptions struct {
+	// ConfigPath is --config: an explicit mnemos.toml whose directory becomes the
+	// MNEMOS_DIR. Empty means resolve by --mnemos-dir / $MNEMOS_DIR / project /
+	// default (see workspace.Resolve).
+	ConfigPath string
+	// MnemosDir is --mnemos-dir: an explicit MNEMOS_DIR.
+	MnemosDir string
+	Verbose   bool
+}
 
-	cfg, err := config.Load(paths, fileExists)
+// Load resolves the workspace layout (the single MNEMOS_DIR and every path
+// derived from it) and loads the mnemos.toml found there. It does NOT open the
+// database; call OpenStore once the layout is known and the directory exists.
+//
+// Every location — knowledge base, capture, index database, models — is a fixed
+// subpath of the resolved MNEMOS_DIR, so the database, writes, and the URI
+// namespace all anchor to one place regardless of the process working directory
+// (which an MCP client does not guarantee).
+func Load(opts LoadOptions) (*App, error) {
+	home, _ := os.UserHomeDir()
+	cwd, _ := os.Getwd()
+
+	layout, err := workspace.Resolve(workspace.Options{
+		ExplicitDir: opts.MnemosDir,
+		ConfigPath:  opts.ConfigPath,
+		Env:         os.Getenv,
+		Home:        home,
+		Cwd:         cwd,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if !filepath.IsAbs(cfg.Storage.Path) {
-		cfg.Storage.Path = filepath.Clean(filepath.Join(treeRoot, cfg.Storage.Path))
-	}
-
-	if err := cfg.Validate(treeRoot); err != nil {
+	cfg, err := config.Load(layout.Config, fileExists)
+	if err != nil {
 		return nil, err
 	}
 
 	return &App{
-		Config:   cfg,
-		Logger:   NewLogger(verbose),
-		treeRoot: treeRoot,
+		Config: cfg,
+		Layout: layout,
+		Logger: NewLogger(opts.Verbose),
 	}, nil
 }
 
-// TreeRoot returns the writable OKF tree root: the directory caller-supplied
-// paths for capture, forget, and move are resolved relative to (and confined
-// within). With an explicit --config it is that file's directory; in
-// auto-discovery mode it is the current working directory.
+// TreeRoot returns the knowledge base root (MNEMOS_DIR/kb): the directory
+// caller-supplied paths for capture, forget, and move are resolved relative to
+// and confined within, and the base of every citation URI.
 func (a *App) TreeRoot() string {
-	return a.treeRoot
+	return a.Layout.KB
 }
 
-// OpenStore opens the configured SQLite database and runs migrations, storing
-// the handle on the App. Callers are responsible for ensuring the parent
-// directory exists.
+// OpenStore opens the workspace index database and runs migrations, storing the
+// handle on the App. Callers are responsible for ensuring the parent directory
+// exists.
 //
 // allowCreate gates database creation. Write/populate commands (init, ingest,
-// watch, okfy) pass true and may create a fresh database. Read commands (serve,
-// search, ls, status, task, reindex, forget, mv) pass false: if the database is
-// absent or empty, OpenStore returns an actionable error rather than letting the
-// SQLite driver silently create an empty database — the failure mode that made a
-// misconfigured MCP server return no results while appearing to work.
+// add, watch, okfy) pass true and may create a fresh database. Read commands
+// (serve, search, ls, status, task, reindex, forget, mv) pass false: if the
+// database is absent or empty, OpenStore returns an actionable error rather than
+// letting the SQLite driver silently create an empty database — the failure mode
+// that made a misconfigured MCP server return no results while appearing to work.
 func (a *App) OpenStore(allowCreate bool) error {
-	path := a.Config.Storage.Path
+	path := a.Layout.DB
 
 	if !allowCreate {
 		switch info, statErr := os.Stat(path); {
 		case errors.Is(statErr, fs.ErrNotExist):
-			cwd, _ := os.Getwd()
-
-			return fmt.Errorf("app: no mnemos database at %q (tree root %q, cwd %q); run \"mnemos init\" or \"mnemos ingest\" first, or point --config / [storage].path at the right file", path, a.treeRoot, cwd)
+			return fmt.Errorf("app: no mnemos database at %q (MNEMOS_DIR %q, %s); run \"mnemos init\" or \"mnemos add\" first", path, a.Layout.MnemosDir, a.Layout.Source)
 		case statErr != nil:
 			return fmt.Errorf("app: stat database %q: %w", path, statErr)
 		case info.Size() == 0:
-			return fmt.Errorf("app: mnemos database at %q is empty (0 bytes); run \"mnemos ingest\" first, or remove the stale file", path)
+			return fmt.Errorf("app: mnemos database at %q is empty (0 bytes); run \"mnemos add\" first, or remove the stale file", path)
 		}
 	}
 

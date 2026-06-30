@@ -14,6 +14,7 @@ import (
 	"github.com/arhuman/mnemos/internal/ingest"
 	"github.com/arhuman/mnemos/internal/okf"
 	"github.com/arhuman/mnemos/internal/security"
+	"github.com/arhuman/mnemos/internal/workspace"
 )
 
 // maxRememberBytes caps the size of a single Remember note. A note is prose;
@@ -158,14 +159,10 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 // capture-dir-relative path (e.g. ".mnemos/capture/idea-...md").
 func (s *Service) writeNoteFile(in RememberInput, filename string, content []byte) (absPath, uri string, outExisted bool, err error) {
 	if strings.TrimSpace(in.Path) == "" {
-		// Anchor the capture dir to the tree root (not the process cwd) and derive
-		// the citation URI from the tree-root-relative form, so an absolute
-		// [capture].dir inside the tree writes to the right place and still cites
-		// a tree-root-relative URI.
-		absDir, relDir, derr := s.cfg.CaptureLocation(s.treeRoot)
-		if derr != nil {
-			return "", "", false, fmt.Errorf("remember capture dir: %w", derr)
-		}
+		// Capture is the fixed kb/capture subdirectory of the tree root; notes are
+		// cited by their tree-root-relative URI ("capture/<file>").
+		absDir := filepath.Join(s.treeRoot, workspace.CaptureName)
+		relDir := workspace.CaptureName
 		dest := filepath.Join(absDir, filename)
 		_, statErr := os.Stat(dest)
 		absPath, err = ingest.WriteCapture(absDir, filename, content)

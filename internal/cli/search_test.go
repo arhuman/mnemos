@@ -11,16 +11,14 @@ import (
 // TestSearchCommand ingests a tiny corpus then exercises the search command:
 // the default citation format, the --json flag, and a punctuation-heavy query.
 func TestSearchCommand(t *testing.T) {
-	workdir := t.TempDir()
-	chdir(t, workdir)
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
 
-	src := filepath.Join(workdir, "src")
-	writeTree(t, src, "docs/scim.md",
+	seedKB(t, filepath.Join("src", "docs", "scim.md"),
 		"# SCIM\n\n## Provisioning\n\nSCIM provisioning with Entra synchronizes users automatically.\n")
-	writeTree(t, src, "docs/cooking.md",
+	seedKB(t, filepath.Join("src", "docs", "cooking.md"),
 		"# Cooking\n\n## Pasta\n\nBoil water and cook pasta.\n")
 
-	runCmd(t, "init")
 	runCmd(t, "ingest", "src", "--collection", "docs")
 
 	t.Run("citation format", func(t *testing.T) {

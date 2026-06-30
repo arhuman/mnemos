@@ -26,9 +26,8 @@ func emptyStore(t *testing.T) *sql.DB {
 	return db
 }
 
-// writeConfig builds an enabled write config with capture inside the tree root
-// (the invariant capture.dir must satisfy: it lives within the tree root so its
-// notes carry a tree-root-relative URI).
+// writeConfig builds an enabled write config. Capture is the fixed kb/capture
+// subdir of the tree root, derived from treeRoot (not configured).
 func writeConfig(t *testing.T) srvCfg {
 	t.Helper()
 
@@ -37,11 +36,15 @@ func writeConfig(t *testing.T) srvCfg {
 	return srvCfg{
 		cfg: &config.Config{
 			MCP:      config.MCPConfig{AllowWrite: true},
-			Capture:  config.CaptureConfig{Dir: filepath.Join(root, ".mnemos", "capture")},
 			Chunking: config.ChunkingConfig{TargetTokens: 700, OverlapTokens: 80},
 		},
 		treeRoot: root,
 	}
+}
+
+// captureDirFor returns the capture directory for a test config's tree root.
+func captureDirFor(c srvCfg) string {
+	return filepath.Join(c.treeRoot, "capture")
 }
 
 func countDocuments(t *testing.T, db *sql.DB) int {
@@ -116,7 +119,7 @@ func TestRememberDeferToWatcherWritesButSkipsIngest(t *testing.T) {
 	// The concept file was written (alongside its directory log.md), but nothing
 	// was ingested: the watcher owns that.
 	require.Zero(t, countDocuments(t, db))
-	entries, err := os.ReadDir(cfg.cfg.Capture.Dir)
+	entries, err := os.ReadDir(captureDirFor(cfg))
 	require.NoError(t, err)
 	var conceptCount int
 	var sawLog bool
@@ -148,7 +151,7 @@ func TestRememberRejectsSecretAndWritesNothing(t *testing.T) {
 	// No document was indexed and no file was written. A missing capture dir
 	// (never created) is treated as empty.
 	require.Zero(t, countDocuments(t, db))
-	entries, _ := os.ReadDir(cfg.cfg.Capture.Dir)
+	entries, _ := os.ReadDir(captureDirFor(cfg))
 	require.Empty(t, entries, "capture dir must contain no file after a rejected secret")
 }
 
@@ -169,7 +172,7 @@ func TestRememberRejectsOversizedText(t *testing.T) {
 
 	// Nothing was indexed and nothing was written.
 	require.Zero(t, countDocuments(t, db))
-	entries, _ := os.ReadDir(cfg.cfg.Capture.Dir)
+	entries, _ := os.ReadDir(captureDirFor(cfg))
 	require.Empty(t, entries, "capture dir must contain no file after rejected oversized text")
 }
 

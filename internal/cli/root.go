@@ -11,6 +11,7 @@ import (
 // subcommands via the rootState.
 type flags struct {
 	configPath string
+	mnemosDir  string
 	verbose    bool
 }
 
@@ -23,7 +24,11 @@ type rootState struct {
 // loadApp constructs the App from the current flag values. Subcommands call
 // this in their RunE rather than relying on a pre-built global.
 func (s *rootState) loadApp() (*app.App, error) {
-	return app.Load(s.flags.configPath, s.flags.verbose)
+	return app.Load(app.LoadOptions{
+		ConfigPath: s.flags.configPath,
+		MnemosDir:  s.flags.mnemosDir,
+		Verbose:    s.flags.verbose,
+	})
 }
 
 // withStore loads the App, opens its store, runs fn with the ready App, and
@@ -61,13 +66,15 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
-	root.PersistentFlags().StringVar(&state.flags.configPath, "config", "", "explicit TOML config file path; overrides ~/.mnemos.toml and ./.mnemos.toml")
+	root.PersistentFlags().StringVar(&state.flags.mnemosDir, "mnemos-dir", "", "explicit MNEMOS_DIR; overrides $MNEMOS_DIR, project ./.mnemos, and the ~/.mnemos default")
+	root.PersistentFlags().StringVar(&state.flags.configPath, "config", "", "explicit mnemos.toml path; its directory becomes the MNEMOS_DIR")
 	root.PersistentFlags().BoolVarP(&state.flags.verbose, "verbose", "v", false, "enable debug logging")
 
 	root.AddCommand(newVersionCmd(state))
 	root.AddCommand(newInitCmd(state))
 	root.AddCommand(newStatusCmd(state))
 	root.AddCommand(newIngestCmd(state))
+	root.AddCommand(newAddCmd(state))
 	root.AddCommand(newSearchCmd(state))
 	root.AddCommand(newLsCmd(state))
 	root.AddCommand(newEvalCmd(state))

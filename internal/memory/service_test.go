@@ -37,7 +37,7 @@ type fixture struct {
 func newFixture(t *testing.T, allowWrite, allowDelete bool) fixture {
 	t.Helper()
 
-	cfg, err := config.Load(nil, func(string) bool { return false })
+	cfg, err := config.Load("", func(string) bool { return false })
 	require.NoError(t, err)
 	cfg.MCP.AllowWrite = allowWrite
 	cfg.MCP.AllowDelete = allowDelete

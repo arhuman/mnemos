@@ -18,7 +18,6 @@ func okfyConfig(treeRoot string) srvCfg {
 	return srvCfg{
 		cfg: &config.Config{
 			MCP:      config.MCPConfig{AllowWrite: true},
-			Capture:  config.CaptureConfig{Dir: filepath.Join(treeRoot, ".mnemos", "capture")},
 			Chunking: config.ChunkingConfig{TargetTokens: 700, OverlapTokens: 80},
 		},
 		treeRoot: treeRoot,
