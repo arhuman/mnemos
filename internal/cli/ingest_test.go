@@ -109,6 +109,19 @@ func TestIngestHonorsFrontmatterCollection(t *testing.T) {
 	require.NotContains(t, miss, "doc.md")
 }
 
+// TestIngestSkipsUnparseableFile asserts a single malformed-frontmatter file is
+// skipped with a warning rather than aborting the whole batch.
+func TestIngestSkipsUnparseableFile(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	seedKB(t, "good.md", "# Good\n\nindexable body\n")
+	seedKB(t, "bad.md", "---\nfoo: bar: baz\n---\n# Bad\n\nbody\n") // broken YAML frontmatter
+
+	out := runCmd(t, "ingest", ".", "--collection", "demo") // must not error
+	require.Contains(t, out, "files ingested:  1")           // only good.md
+}
+
 // count runs a scalar COUNT query and returns the integer result.
 func count(t *testing.T, db *sql.DB, query string, args ...any) int {
 	t.Helper()
