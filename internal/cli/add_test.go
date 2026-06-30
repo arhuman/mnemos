@@ -25,6 +25,24 @@ func TestAddCopiesFileIntoKBAndIndexes(t *testing.T) {
 	require.Contains(t, s, "ext.md")
 }
 
+func TestAddCopiesDirectoryTree(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ext, "sub"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "top.md"), []byte("# Top\n\nbody one\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "sub", "nested.md"), []byte("# Nested\n\nbody two\n"), 0o644))
+
+	out := runCmd(t, "add", ext, "--into", "vault", "--collection", "c")
+	require.Contains(t, out, "files ingested:  2")
+	require.FileExists(t, kbPath(filepath.Join("vault", "top.md")))
+	require.FileExists(t, kbPath(filepath.Join("vault", "sub", "nested.md")))
+
+	hit := runCmd(t, "search", "body two", "--json")
+	require.Contains(t, hit, `"uri": "vault/sub/nested.md"`)
+}
+
 func TestAddIntoSubpath(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
@@ -86,4 +104,25 @@ func TestAddRejectsDestOutsideKB(t *testing.T) {
 
 	_, err := runCmdErr(t, "add", filepath.Join(ext, "n.md"), "--into", "../escape.md")
 	require.Error(t, err)
+}
+
+func TestAddUnknownMode(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	ext := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(ext, "n.md"), []byte("# N\n\nbody\n"), 0o644))
+
+	_, err := runCmdErr(t, "add", filepath.Join(ext, "n.md"), "--mode", "bogus")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown --mode")
+}
+
+func TestAddSourceNotFound(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+
+	_, err := runCmdErr(t, "add", filepath.Join(t.TempDir(), "does-not-exist.md"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "source")
 }

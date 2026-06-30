@@ -60,3 +60,38 @@ func TestMigrateRequiresFrom(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--from is required")
 }
+
+func TestMigrateSourceNotFound(t *testing.T) {
+	to := filepath.Join(t.TempDir(), ".mnemos")
+	_, err := runCmdErr(t, "migrate", "--from", filepath.Join(t.TempDir(), "nope"), "--to", to)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--from")
+}
+
+func TestMigrateRejectsTargetKBEqualsSource(t *testing.T) {
+	// --from is <dir>/kb and --to is <dir>, so the target kb (<dir>/kb) equals the
+	// source root: migrate must refuse rather than relocate a tree onto itself.
+	base := t.TempDir()
+	src := filepath.Join(base, "kb")
+	require.NoError(t, os.MkdirAll(src, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a.md"), []byte("# A\n"), 0o644))
+
+	_, err := runCmdErr(t, "migrate", "--from", src, "--to", base)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "equals the source")
+}
+
+// TestMigrateFromConfigFileSkipsConfig exercises the --from-is-a-config-file
+// branch: the file's directory is the tree root and the config itself is not
+// relocated into the kb.
+func TestMigrateFromConfigFileSkipsConfig(t *testing.T) {
+	old := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(old, "old.toml"), []byte("[mcp]\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(old, "note.md"), []byte("# Note\n\nbody\n"), 0o644))
+	to := filepath.Join(t.TempDir(), ".mnemos")
+
+	runCmd(t, "migrate", "--from", filepath.Join(old, "old.toml"), "--to", to)
+
+	require.FileExists(t, filepath.Join(to, "kb", "note.md"))
+	require.NoFileExists(t, filepath.Join(to, "kb", "old.toml")) // the config is not relocated
+}
