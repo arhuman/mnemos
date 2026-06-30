@@ -27,34 +27,35 @@ func TestNewLoggerLevel(t *testing.T) {
 	require.True(t, app.NewLogger(false).Enabled(ctx, slog.LevelInfo))
 }
 
-func TestLoadBuildsAppWithoutDB(t *testing.T) {
+func TestLoadBuildsAppWithDerivedLayout(t *testing.T) {
 	dir := t.TempDir()
-	path := writeFile(t, dir, "mnemos.toml", "[storage]\npath = \"x.db\"\n")
 
-	a, err := app.Load(path, false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: dir})
 	require.NoError(t, err)
 	require.NotNil(t, a.Config)
 	require.NotNil(t, a.Logger)
 	require.Nil(t, a.DB) // Load does not open storage.
-	// A relative storage path is resolved once, against the --config directory
-	// (the tree root), so it no longer silently follows the process cwd.
-	require.Equal(t, filepath.Join(dir, "x.db"), a.Config.Storage.Path)
+	require.Equal(t, dir, a.Layout.MnemosDir)
+	require.Equal(t, filepath.Join(dir, "kb"), a.Layout.KB)
+	require.Equal(t, filepath.Join(dir, "kb", "capture"), a.Layout.Capture)
+	require.Equal(t, filepath.Join(dir, "state", "index.db"), a.Layout.DB)
 }
 
-func TestLoadKeepsAbsoluteStoragePath(t *testing.T) {
+func TestLoadConfigPathSetsMnemosDir(t *testing.T) {
 	dir := t.TempDir()
-	abs := filepath.Join(dir, "data", "mnemos.db")
-	path := writeFile(t, dir, "mnemos.toml", "[storage]\npath = \""+abs+"\"\n")
+	path := writeFile(t, dir, "custom.toml", "[search]\ndefault_limit = 7\n")
 
-	a, err := app.Load(path, false)
+	a, err := app.Load(app.LoadOptions{ConfigPath: path})
 	require.NoError(t, err)
-	require.Equal(t, abs, a.Config.Storage.Path)
+	require.Equal(t, dir, a.Layout.MnemosDir)
+	require.Equal(t, path, a.Layout.Config)
+	require.Equal(t, 7, a.Config.Search.DefaultLimit)
 }
 
 func TestOpenStoreAndClose(t *testing.T) {
-	a, err := app.Load("", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: t.TempDir()})
 	require.NoError(t, err)
-	a.Config.Storage.Path = filepath.Join(t.TempDir(), "mnemos.db")
+	a.Layout.DB = filepath.Join(t.TempDir(), "mnemos.db")
 
 	require.NoError(t, a.OpenStore(true))
 	require.NotNil(t, a.DB)
@@ -67,40 +68,37 @@ func TestOpenStoreAndClose(t *testing.T) {
 	require.NoError(t, a.Close())
 }
 
-func TestTreeRoot(t *testing.T) {
-	a, err := app.Load(filepath.Join("MEMORY", "mnemos.toml"), false)
-	require.NoError(t, err)
-	require.Equal(t, "MEMORY", a.TreeRoot())
+func TestTreeRootIsKB(t *testing.T) {
+	dir := t.TempDir()
 
-	// A bare config name resolves the tree root to the current directory.
-	a, err = app.Load("mnemos.toml", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: dir})
 	require.NoError(t, err)
-	require.Equal(t, ".", a.TreeRoot())
+	require.Equal(t, filepath.Join(dir, "kb"), a.TreeRoot())
 }
 
 func TestCloseWithoutDBIsNoOp(t *testing.T) {
-	a, err := app.Load("", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: t.TempDir()})
 	require.NoError(t, err)
 	require.NoError(t, a.Close())
 }
 
 func TestOpenStoreErrorsOnUnusablePath(t *testing.T) {
-	a, err := app.Load("", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: t.TempDir()})
 	require.NoError(t, err)
 	// Parent directory does not exist, so opening/creating the DB file fails.
-	a.Config.Storage.Path = filepath.Join(t.TempDir(), "missing-subdir", "mnemos.db")
+	a.Layout.DB = filepath.Join(t.TempDir(), "missing-subdir", "mnemos.db")
 	require.Error(t, a.OpenStore(true))
 	require.Nil(t, a.DB)
 }
 
 func TestOpenStoreRejectsMissingDBWhenCreateDisallowed(t *testing.T) {
-	a, err := app.Load("", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: t.TempDir()})
 	require.NoError(t, err)
 	// Parent directory exists but the database file does not. With creation
 	// disallowed (read commands), OpenStore must error instead of silently
 	// creating an empty database, and must not create the file.
 	path := filepath.Join(t.TempDir(), "mnemos.db")
-	a.Config.Storage.Path = path
+	a.Layout.DB = path
 
 	require.Error(t, a.OpenStore(false))
 	require.Nil(t, a.DB)
@@ -108,13 +106,13 @@ func TestOpenStoreRejectsMissingDBWhenCreateDisallowed(t *testing.T) {
 }
 
 func TestOpenStoreRejectsEmptyDBWhenCreateDisallowed(t *testing.T) {
-	a, err := app.Load("", false)
+	a, err := app.Load(app.LoadOptions{MnemosDir: t.TempDir()})
 	require.NoError(t, err)
-	// A zero-byte file (e.g. left behind by the old silent-create behavior) is
-	// treated as missing rather than opened as a valid empty database.
+	// A zero-byte file (e.g. left behind by an old silent-create) is treated as
+	// missing rather than opened as a valid empty database.
 	path := filepath.Join(t.TempDir(), "mnemos.db")
 	require.NoError(t, os.WriteFile(path, nil, 0o644))
-	a.Config.Storage.Path = path
+	a.Layout.DB = path
 
 	require.Error(t, a.OpenStore(false))
 	require.Nil(t, a.DB)

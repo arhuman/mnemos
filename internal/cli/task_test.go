@@ -1,7 +1,6 @@
 package cli_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -14,7 +13,7 @@ func seedTasks(t *testing.T) {
 	t.Helper()
 	runCmd(t, "init")
 	write := func(name, body string) {
-		require.NoError(t, os.WriteFile(name, []byte(body), 0o644))
+		seedKB(t, name, body)
 	}
 	write("t1.md", "---\ntype: Task\nstatus: todo\ntitle: First\n---\n# First\n\nbody\n")
 	write("t2.md", "---\ntype: Task\nstatus: in_progress\ntitle: Second\n---\n# Second\n\nbody\n")

@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,19 +35,35 @@ func chdir(t *testing.T, dir string) {
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 }
 
+// kbPath returns rel resolved inside the project-local knowledge base
+// (./.mnemos/kb), where all addressable content lives under the Phase 2 model.
+func kbPath(rel string) string {
+	return filepath.Join(".mnemos", "kb", rel)
+}
+
+// seedKB writes content at rel inside the local kb, creating parent dirs. Use it
+// with `ingest .` to index seeded content (the scan root resolves to the kb).
+func seedKB(t *testing.T, rel, content string) {
+	t.Helper()
+	p := kbPath(rel)
+	require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o750))
+	require.NoError(t, os.WriteFile(p, []byte(content), 0o644))
+}
+
 // TestInitThenStatus runs `init` then `status` in a fresh temp dir and asserts
 // the workspace is created and status reports zero counts with FTS available.
 func TestInitThenStatus(t *testing.T) {
 	chdir(t, t.TempDir())
 
 	initOut := runCmd(t, "init")
-	require.Contains(t, initOut, "created config: .mnemos.toml")
+	require.Contains(t, initOut, "created config")
+	require.Contains(t, initOut, "mnemos.toml")
 	require.Contains(t, initOut, "initialized database")
 
-	require.FileExists(t, ".mnemos.toml")
-	require.DirExists(t, ".mnemos")
-	require.DirExists(t, ".mnemos/capture")
-	require.FileExists(t, ".mnemos/mnemos.db")
+	require.FileExists(t, ".mnemos/mnemos.toml")
+	require.DirExists(t, ".mnemos/kb")
+	require.DirExists(t, ".mnemos/kb/capture")
+	require.FileExists(t, ".mnemos/state/index.db")
 
 	statusOut := runCmd(t, "status")
 
@@ -88,12 +105,14 @@ func TestInitThenStatus(t *testing.T) {
 func TestInitDoesNotOverwriteConfig(t *testing.T) {
 	chdir(t, t.TempDir())
 
-	require.NoError(t, os.WriteFile(".mnemos.toml", []byte("[storage]\npath = \".mnemos/mnemos.db\"\n"), 0o644))
+	require.NoError(t, os.MkdirAll(".mnemos", 0o750))
+	const seed = "[search]\ndefault_limit = 3\n"
+	require.NoError(t, os.WriteFile(".mnemos/mnemos.toml", []byte(seed), 0o644))
 
 	out := runCmd(t, "init")
 	require.Contains(t, out, "kept existing config")
 
-	got, err := os.ReadFile(".mnemos.toml")
+	got, err := os.ReadFile(".mnemos/mnemos.toml")
 	require.NoError(t, err)
-	require.Equal(t, "[storage]\npath = \".mnemos/mnemos.db\"\n", string(got))
+	require.Equal(t, seed, string(got))
 }

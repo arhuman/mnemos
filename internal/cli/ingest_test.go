@@ -23,21 +23,19 @@ func writeTree(t *testing.T, dir, rel, content string) {
 // links counts, that index.md yields a document with zero chunks, and that a
 // re-ingest skips unchanged files.
 func TestIngestPopulatesStore(t *testing.T) {
-	workdir := t.TempDir()
-	chdir(t, workdir)
-
-	src := filepath.Join(workdir, "src")
-	writeTree(t, src, "a.md", "---\ntype: note\ntags: [x]\n---\n\n# Title\n\nBody. [link](b.md)\n")
-	writeTree(t, src, "index.md", "# Bundle\n\nstructure only [hub](a.md)\n")
-	writeTree(t, src, "note.txt", "plain text\n\nsecond para\n")
-
+	chdir(t, t.TempDir())
 	runCmd(t, "init")
+
+	// Content lives inside the kb (managed store); ingest "src" scans kb/src.
+	seedKB(t, filepath.Join("src", "a.md"), "---\ntype: note\ntags: [x]\n---\n\n# Title\n\nBody. [link](b.md)\n")
+	seedKB(t, filepath.Join("src", "index.md"), "# Bundle\n\nstructure only [hub](a.md)\n")
+	seedKB(t, filepath.Join("src", "note.txt"), "plain text\n\nsecond para\n")
 
 	out := runCmd(t, "ingest", "src", "--collection", "demo")
 	require.Contains(t, out, "files scanned:   3")
 	require.Contains(t, out, "files ingested:  3")
 
-	db, err := sql.Open("sqlite", filepath.Join(".mnemos", "mnemos.db"))
+	db, err := sql.Open("sqlite", filepath.Join(".mnemos", "state", "index.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 

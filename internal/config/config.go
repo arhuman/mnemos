@@ -1,12 +1,12 @@
 // Package config defines the mnemos configuration schema, its built-in
-// defaults, and the layered loader that merges those defaults with the user's
-// home- and project-level TOML files.
+// defaults, and the loader that merges those defaults with the single
+// mnemos.toml found inside the active MNEMOS_DIR. The config carries behaviour
+// only — indexing rules, chunking, search, the MCP surface, and security — never
+// locations: every path is derived from the MNEMOS_DIR by package workspace.
 package config
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/file"
@@ -14,26 +14,16 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-// FileName is the conventional config filename, auto-discovered in the user's
-// home directory and the current working directory.
-const FileName = ".mnemos.toml"
-
-// Config mirrors .mnemos.toml. It is loaded by layering the user files (if
-// present) on top of built-in defaults, so a missing section or key always
-// falls back to a sane value.
+// Config mirrors mnemos.toml. It is loaded by overlaying the file (if present)
+// on top of built-in defaults, so a missing section or key always falls back to
+// a sane value.
 type Config struct {
-	Storage  StorageConfig  `koanf:"storage"`
 	Indexing IndexingConfig `koanf:"indexing"`
 	Chunking ChunkingConfig `koanf:"chunking"`
 	Search   SearchConfig   `koanf:"search"`
 	MCP      MCPConfig      `koanf:"mcp"`
 	Capture  CaptureConfig  `koanf:"capture"`
 	Security SecurityConfig `koanf:"security"`
-}
-
-// StorageConfig configures on-disk persistence.
-type StorageConfig struct {
-	Path string `koanf:"path"`
 }
 
 // IndexingConfig configures which files are discovered for ingestion.
@@ -69,13 +59,14 @@ type MCPConfig struct {
 	AllowDelete bool `koanf:"allow_delete"`
 }
 
-// CaptureConfig configures the write-back capture directory.
+// CaptureConfig configures write-back behaviour. The capture location itself is
+// not configurable: it is always the kb/capture directory of the active
+// MNEMOS_DIR (see package workspace).
 type CaptureConfig struct {
-	Dir string `koanf:"dir"`
 	// DeferToWatcher, when true, makes mnemos.remember write-only: the OKF file
-	// is written but not ingested one-shot, leaving capture_dir ingestion to a
+	// is written but not ingested one-shot, leaving kb/capture ingestion to a
 	// running watcher. Default false keeps the one-shot ingest, which is safe
-	// even alongside a watcher because Phase 1 hash-skip makes the watcher's
+	// even alongside a watcher because the Phase 1 hash-skip makes the watcher's
 	// re-sighting of the file a no-op.
 	DeferToWatcher bool `koanf:"defer_to_watcher"`
 }
@@ -86,13 +77,10 @@ type SecurityConfig struct {
 	Exclude        []string `koanf:"exclude"`
 }
 
-// defaultTOML holds the built-in configuration, identical to the file written
-// by `mnemos init`. It is the single source of truth for defaults: the loader
-// parses it first, then overlays the user files.
-const defaultTOML = `[storage]
-path = ".mnemos/mnemos.db"
-
-[indexing]
+// defaultTOML holds the built-in configuration, identical to the file written by
+// `mnemos init`. It is the single source of truth for defaults: the loader
+// parses it first, then overlays the user file. It carries no location keys.
+const defaultTOML = `[indexing]
 include = ["**/*.md", "**/*.txt", "**/*.go", "**/*.sql"]
 exclude = [".git/**", "node_modules/**", "vendor/**", "dist/**"]
 # Skip any single file larger than this many bytes (default 4 MiB). Bounds
@@ -113,7 +101,6 @@ allow_write = false
 allow_delete = false
 
 [capture]
-dir = ".mnemos/capture"
 defer_to_watcher = false
 
 [security]
@@ -128,55 +115,9 @@ exclude = [
 `
 
 // DefaultTOML returns the canonical default configuration document. `init` uses
-// it to seed a new .mnemos.toml.
+// it to seed a new mnemos.toml.
 func DefaultTOML() []byte {
 	return []byte(defaultTOML)
-}
-
-// Validate checks the location-bearing config against the tree root. It is
-// called once at load time (app.Load) so every command shares the same check
-// rather than each rediscovering it. Currently it validates [capture].dir, which
-// must resolve within the tree root (an absolute value is accepted as long as it
-// stays inside; a relative value is anchored to the root).
-func (c *Config) Validate(treeRoot string) error {
-	if _, _, err := c.CaptureLocation(treeRoot); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// CaptureLocation resolves [capture].dir against the tree root and returns the
-// absolute directory to write auto-named notes into and the tree-root-relative
-// directory used to derive their citation URIs. An absolute capture.dir is
-// accepted when it stays within the tree root; a relative one is anchored to the
-// root (not the process cwd), so capture lands in the same place regardless of
-// where a command — or an MCP server — was launched. A capture.dir that escapes
-// the tree root is rejected, since its notes could not carry a tree-root-relative
-// URI.
-func (c *Config) CaptureLocation(treeRoot string) (absDir, relDir string, err error) {
-	rootAbs, err := filepath.Abs(treeRoot)
-	if err != nil {
-		return "", "", fmt.Errorf("config: resolve tree root %q: %w", treeRoot, err)
-	}
-	rootAbs = filepath.Clean(rootAbs)
-
-	dir := c.Capture.Dir
-	if filepath.IsAbs(dir) {
-		absDir = filepath.Clean(dir)
-	} else {
-		absDir = filepath.Clean(filepath.Join(rootAbs, dir))
-	}
-
-	rel, err := filepath.Rel(rootAbs, absDir)
-	if err != nil {
-		return "", "", fmt.Errorf("config: relativize [capture].dir %q against tree root %q: %w", dir, treeRoot, err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("config: [capture].dir %q escapes the tree root %q; set it inside the tree", dir, rootAbs)
-	}
-
-	return absDir, rel, nil
 }
 
 // ConfinementExclude returns the globs the write/delete confinement guard
@@ -199,46 +140,20 @@ func (c *Config) SecurityExclude() []string {
 	return c.Security.Exclude
 }
 
-// Resolve determines the ordered config files to layer and the writable tree
-// root, given the explicit --config value (empty means auto-discover) and the
-// user's home directory.
-//
-// Precedence is expressed by order: later files override earlier ones. When
-// explicitPath is set it REPLACES auto-discovery and wins outright; its
-// directory becomes the tree root. Otherwise the home file (~/.mnemos.toml) is
-// layered first and the project file (./.mnemos.toml) overrides it, with the
-// current directory as the tree root.
-func Resolve(explicitPath, homeDir string) (paths []string, treeRoot string) {
-	if explicitPath != "" {
-		return []string{explicitPath}, filepath.Dir(explicitPath)
-	}
-
-	if homeDir != "" {
-		paths = append(paths, filepath.Join(homeDir, FileName))
-	}
-	paths = append(paths, FileName)
-
-	return paths, "."
-}
-
-// Load builds a Config from the embedded defaults, then overlays each existing
-// file in paths in order (later files win). Missing files are skipped: the
-// defaults stand on their own. A malformed file is an error. fileExists is the
-// caller-supplied existence check so callers control filesystem semantics in
-// tests.
-func Load(paths []string, fileExists func(string) bool) (*Config, error) {
+// Load builds a Config from the embedded defaults, then overlays the single
+// config file at path when it exists. A missing file is fine: the defaults stand
+// on their own. A malformed file is an error. fileExists is the caller-supplied
+// existence check so callers control filesystem semantics in tests.
+func Load(path string, fileExists func(string) bool) (*Config, error) {
 	k := koanf.New(".")
 
 	if err := k.Load(rawbytes.Provider(DefaultTOML()), toml.Parser()); err != nil {
 		return nil, fmt.Errorf("config: load defaults: %w", err)
 	}
 
-	for _, p := range paths {
-		if p == "" || !fileExists(p) {
-			continue
-		}
-		if err := k.Load(file.Provider(p), toml.Parser()); err != nil {
-			return nil, fmt.Errorf("config: load %q: %w", p, err)
+	if path != "" && fileExists(path) {
+		if err := k.Load(file.Provider(path), toml.Parser()); err != nil {
+			return nil, fmt.Errorf("config: load %q: %w", path, err)
 		}
 	}
 

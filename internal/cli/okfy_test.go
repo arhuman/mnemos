@@ -13,17 +13,17 @@ func TestOkfyTxtProducesOKFAndIndexes(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("note.txt", []byte("Plain text body without a heading.\n"), 0o644))
+	seedKB(t, "note.txt", "Plain text body without a heading.\n")
 
 	out := runCmd(t, "okfy", "note.txt")
 	require.Contains(t, out, "okfied note.txt -> note.md")
 	require.Contains(t, out, "collection default")
 
 	// Source kept intact.
-	require.FileExists(t, "note.txt")
+	require.FileExists(t, kbPath("note.txt"))
 
 	// OKF output has frontmatter and a derived heading.
-	okf, err := os.ReadFile("note.md")
+	okf, err := os.ReadFile(kbPath("note.md"))
 	require.NoError(t, err)
 	body := string(okf)
 	require.True(t, strings.HasPrefix(body, "---\n"), "expected frontmatter block")
@@ -44,13 +44,13 @@ func TestOkfyHonorsOutFlag(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("source.txt", []byte("Body content.\n"), 0o644))
+	seedKB(t, "source.txt", "Body content.\n")
 
 	out := runCmd(t, "okfy", "source.txt", "--out", "docs/result.md", "--collection", "tech", "--type", "idea", "--tags", "a, b")
 	require.Contains(t, out, "okfied source.txt -> docs/result.md")
 	require.Contains(t, out, "collection tech")
 
-	okf, err := os.ReadFile(filepath.Join("docs", "result.md"))
+	okf, err := os.ReadFile(kbPath(filepath.Join("docs", "result.md")))
 	require.NoError(t, err)
 	body := string(okf)
 	require.Contains(t, body, "type: idea")
@@ -63,7 +63,7 @@ func TestOkfyRejectsTraversalOut(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("source.txt", []byte("Body.\n"), 0o644))
+	seedKB(t, "source.txt", "Body.\n")
 
 	_, err := runCmdErr(t, "okfy", "source.txt", "--out", "../escape.md")
 	require.Error(t, err)
@@ -74,7 +74,7 @@ func TestOkfyMdSourceWithoutOutErrors(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("doc.md", []byte("# Doc\n\nBody.\n"), 0o644))
+	seedKB(t, "doc.md", "# Doc\n\nBody.\n")
 
 	_, err := runCmdErr(t, "okfy", "doc.md")
 	require.Error(t, err)
@@ -83,15 +83,15 @@ func TestOkfyMdSourceWithoutOutErrors(t *testing.T) {
 	// With --out it works and keeps the source.
 	out := runCmd(t, "okfy", "doc.md", "--out", "doc.okf.md")
 	require.Contains(t, out, "okfied doc.md -> doc.okf.md")
-	require.FileExists(t, "doc.md")
-	require.FileExists(t, "doc.okf.md")
+	require.FileExists(t, kbPath("doc.md"))
+	require.FileExists(t, kbPath("doc.okf.md"))
 }
 
 func TestOkfyRejectsNonTextExtension(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("data.json", []byte("{}\n"), 0o644))
+	seedKB(t, "data.json", "{}\n")
 
 	_, err := runCmdErr(t, "okfy", "data.json")
 	require.Error(t, err)
@@ -102,22 +102,22 @@ func TestOkfyRejectsSecretInSource(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("leak.txt", []byte("deploy key AKIAQYLPMN5HXYZ12345 do not commit\n"), 0o644))
+	seedKB(t, "leak.txt", "deploy key AKIAQYLPMN5HXYZ12345 do not commit\n")
 
 	_, err := runCmdErr(t, "okfy", "leak.txt")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "detected secrets")
 
 	// No OKF output written when a secret is detected.
-	require.NoFileExists(t, "leak.md")
+	require.NoFileExists(t, kbPath("leak.md"))
 }
 
 func TestOkfyRejectsExistingOutput(t *testing.T) {
 	chdir(t, t.TempDir())
 	runCmd(t, "init")
 
-	require.NoError(t, os.WriteFile("source.txt", []byte("Body.\n"), 0o644))
-	require.NoError(t, os.WriteFile("taken.md", []byte("existing\n"), 0o644))
+	seedKB(t, "source.txt", "Body.\n")
+	seedKB(t, "taken.md", "existing\n")
 
 	_, err := runCmdErr(t, "okfy", "source.txt", "--out", "taken.md")
 	require.Error(t, err)

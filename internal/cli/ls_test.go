@@ -1,7 +1,6 @@
 package cli_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,13 +12,11 @@ import (
 func seedLsTree(t *testing.T) {
 	t.Helper()
 	runCmd(t, "init")
-	require.NoError(t, os.MkdirAll("adr", 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join("adr", "0001.md"),
-		[]byte("---\ntype: adr\n---\n# One\n\nbody\n"), 0o644))
-	require.NoError(t, os.WriteFile("readme.md", []byte("# Readme\n\nbody\n"), 0o644))
+	seedKB(t, filepath.Join("adr", "0001.md"), "---\ntype: adr\n---\n# One\n\nbody\n")
+	seedKB(t, "readme.md", "# Readme\n\nbody\n")
 	runCmd(t, "ingest", ".", "--collection", "demo")
 	// Indexable but never ingested.
-	require.NoError(t, os.WriteFile("draft.md", []byte("# Draft\n\nbody\n"), 0o644))
+	seedKB(t, "draft.md", "# Draft\n\nbody\n")
 }
 
 func TestLsFlat(t *testing.T) {

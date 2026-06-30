@@ -24,7 +24,10 @@ func newStatusCmd(state *rootState) *cobra.Command {
 
 // statusInfo is the gathered snapshot rendered by status.
 type statusInfo struct {
-	storagePath   string
+	mnemosDir     string
+	source        string
+	kb            string
+	dbPath        string
 	collections   int
 	documents     int
 	chunks        int
@@ -48,7 +51,12 @@ func runStatus(cmd *cobra.Command, state *rootState) error {
 }
 
 func gatherStatus(ctx context.Context, a *app.App) (statusInfo, error) {
-	info := statusInfo{storagePath: a.Config.Storage.Path}
+	info := statusInfo{
+		mnemosDir: a.Layout.MnemosDir,
+		source:    a.Layout.Source,
+		kb:        a.Layout.KB,
+		dbPath:    a.Layout.DB,
+	}
 	db := a.DB
 
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT collection) FROM documents`).Scan(&info.collections); err != nil {
@@ -86,7 +94,9 @@ func ftsAvailable(ctx context.Context, db *sql.DB) bool {
 
 func renderStatus(cmd *cobra.Command, info statusInfo) error {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintf(w, "storage path\t%s\n", info.storagePath)
+	_, _ = fmt.Fprintf(w, "mnemos dir\t%s (%s)\n", info.mnemosDir, info.source)
+	_, _ = fmt.Fprintf(w, "kb root\t%s\n", info.kb)
+	_, _ = fmt.Fprintf(w, "index db\t%s\n", info.dbPath)
 	_, _ = fmt.Fprintf(w, "collections\t%d\n", info.collections)
 	_, _ = fmt.Fprintf(w, "documents\t%d\n", info.documents)
 	_, _ = fmt.Fprintf(w, "chunks\t%d\n", info.chunks)
