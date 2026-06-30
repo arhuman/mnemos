@@ -53,7 +53,10 @@ func runInit(cmd *cobra.Command, state *rootState) error {
 	}
 	_, _ = fmt.Fprintf(out, "created directory: %s\n", dbDir)
 
-	captureDir := a.Config.Capture.Dir
+	captureDir, _, err := a.Config.CaptureLocation(a.TreeRoot())
+	if err != nil {
+		return fmt.Errorf("init: %w", err)
+	}
 	if err := os.MkdirAll(captureDir, 0o750); err != nil {
 		return fmt.Errorf("init: create %q: %w", captureDir, err)
 	}

@@ -86,3 +86,44 @@ func TestResolveWithinRejectsEmpty(t *testing.T) {
 	_, _, err := security.ResolveWithin(root, "  ", nil)
 	require.Error(t, err)
 }
+
+func TestConfineDirInsideRoot(t *testing.T) {
+	root := t.TempDir()
+
+	abs, err := security.ConfineDir(root, "docs/sub")
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "docs", "sub"), abs)
+}
+
+func TestConfineDirAllowsRootItself(t *testing.T) {
+	root := t.TempDir()
+
+	abs, err := security.ConfineDir(root, root)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Clean(root), abs)
+
+	abs, err = security.ConfineDir(root, ".")
+	require.NoError(t, err)
+	require.NotEmpty(t, abs)
+}
+
+func TestConfineDirRejectsOutside(t *testing.T) {
+	root := t.TempDir()
+
+	_, err := security.ConfineDir(root, "../sibling")
+	require.Error(t, err)
+
+	_, err = security.ConfineDir(root, "/etc")
+	require.Error(t, err)
+}
+
+func TestConfineDirRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	link := filepath.Join(root, "evil")
+	require.NoError(t, os.Symlink(outside, link))
+
+	_, err := security.ConfineDir(root, "evil")
+	require.Error(t, err)
+}

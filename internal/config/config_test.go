@@ -110,3 +110,45 @@ func TestResolveAutoDiscoverNoHome(t *testing.T) {
 	require.Equal(t, []string{config.FileName}, paths)
 	require.Equal(t, ".", treeRoot)
 }
+
+func captureCfg(dir string) *config.Config {
+	return &config.Config{Capture: config.CaptureConfig{Dir: dir}}
+}
+
+func TestCaptureLocationDefaultRelative(t *testing.T) {
+	root := t.TempDir()
+
+	absDir, relDir, err := captureCfg(".mnemos/capture").CaptureLocation(root)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, ".mnemos", "capture"), absDir)
+	require.Equal(t, filepath.Join(".mnemos", "capture"), relDir)
+}
+
+func TestCaptureLocationAbsoluteInsideTree(t *testing.T) {
+	root := t.TempDir()
+	abs := filepath.Join(root, ".mnemos", "capture")
+
+	absDir, relDir, err := captureCfg(abs).CaptureLocation(root)
+	require.NoError(t, err)
+	require.Equal(t, abs, absDir)
+	require.Equal(t, filepath.Join(".mnemos", "capture"), relDir)
+}
+
+func TestCaptureLocationRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	_, _, err := captureCfg(outside).CaptureLocation(root)
+	require.Error(t, err)
+
+	_, _, err = captureCfg("../escape").CaptureLocation(root)
+	require.Error(t, err)
+}
+
+func TestValidateRejectsEscapingCaptureDir(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+
+	require.NoError(t, captureCfg(".mnemos/capture").Validate(root))
+	require.Error(t, captureCfg(outside).Validate(root))
+}

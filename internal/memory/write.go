@@ -158,14 +158,22 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 // capture-dir-relative path (e.g. ".mnemos/capture/idea-...md").
 func (s *Service) writeNoteFile(in RememberInput, filename string, content []byte) (absPath, uri string, outExisted bool, err error) {
 	if strings.TrimSpace(in.Path) == "" {
-		dest := filepath.Join(s.cfg.Capture.Dir, filename)
+		// Anchor the capture dir to the tree root (not the process cwd) and derive
+		// the citation URI from the tree-root-relative form, so an absolute
+		// [capture].dir inside the tree writes to the right place and still cites
+		// a tree-root-relative URI.
+		absDir, relDir, derr := s.cfg.CaptureLocation(s.treeRoot)
+		if derr != nil {
+			return "", "", false, fmt.Errorf("remember capture dir: %w", derr)
+		}
+		dest := filepath.Join(absDir, filename)
 		_, statErr := os.Stat(dest)
-		absPath, err = ingest.WriteCapture(s.cfg.Capture.Dir, filename, content)
+		absPath, err = ingest.WriteCapture(absDir, filename, content)
 		if err != nil {
 			return "", "", false, fmt.Errorf("remember write: %w", err)
 		}
 
-		return absPath, filepath.ToSlash(dest), statErr == nil, nil
+		return absPath, filepath.ToSlash(filepath.Join(relDir, filename)), statErr == nil, nil
 	}
 
 	// Caller-chosen target: confine it to the tree root and require .md so a

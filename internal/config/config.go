@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/file"
@@ -130,6 +131,52 @@ exclude = [
 // it to seed a new .mnemos.toml.
 func DefaultTOML() []byte {
 	return []byte(defaultTOML)
+}
+
+// Validate checks the location-bearing config against the tree root. It is
+// called once at load time (app.Load) so every command shares the same check
+// rather than each rediscovering it. Currently it validates [capture].dir, which
+// must resolve within the tree root (an absolute value is accepted as long as it
+// stays inside; a relative value is anchored to the root).
+func (c *Config) Validate(treeRoot string) error {
+	if _, _, err := c.CaptureLocation(treeRoot); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CaptureLocation resolves [capture].dir against the tree root and returns the
+// absolute directory to write auto-named notes into and the tree-root-relative
+// directory used to derive their citation URIs. An absolute capture.dir is
+// accepted when it stays within the tree root; a relative one is anchored to the
+// root (not the process cwd), so capture lands in the same place regardless of
+// where a command — or an MCP server — was launched. A capture.dir that escapes
+// the tree root is rejected, since its notes could not carry a tree-root-relative
+// URI.
+func (c *Config) CaptureLocation(treeRoot string) (absDir, relDir string, err error) {
+	rootAbs, err := filepath.Abs(treeRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("config: resolve tree root %q: %w", treeRoot, err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	dir := c.Capture.Dir
+	if filepath.IsAbs(dir) {
+		absDir = filepath.Clean(dir)
+	} else {
+		absDir = filepath.Clean(filepath.Join(rootAbs, dir))
+	}
+
+	rel, err := filepath.Rel(rootAbs, absDir)
+	if err != nil {
+		return "", "", fmt.Errorf("config: relativize [capture].dir %q against tree root %q: %w", dir, treeRoot, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("config: [capture].dir %q escapes the tree root %q; set it inside the tree", dir, rootAbs)
+	}
+
+	return absDir, rel, nil
 }
 
 // ConfinementExclude returns the globs the write/delete confinement guard

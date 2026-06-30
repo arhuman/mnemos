@@ -70,6 +70,45 @@ func ResolveWithin(root, p string, exclude []string) (abs string, uri string, er
 	return abs, uri, nil
 }
 
+// ConfineDir validates that directory path p resolves within root (or is root
+// itself) and does not escape via traversal or a symlink. It guards a scan/ingest
+// root rather than a single write target, so — unlike ResolveWithin — it permits
+// the root itself and does not reject the internal .mnemos directory. It returns
+// the cleaned absolute path on success.
+func ConfineDir(root, p string) (abs string, err error) {
+	if strings.TrimSpace(p) == "" {
+		return "", errors.New("security: empty path")
+	}
+
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("security: resolve root %q: %w", root, err)
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	// A relative path is interpreted against the tree root (like ResolveWithin),
+	// not the process cwd, so confinement is independent of where the command ran.
+	candidate := p
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(rootAbs, candidate)
+	}
+	abs = filepath.Clean(candidate)
+
+	rel, err := filepath.Rel(rootAbs, abs)
+	if err != nil {
+		return "", fmt.Errorf("security: relativize %q: %w", p, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("security: path %q is outside the tree root %q", p, rootAbs)
+	}
+
+	if err := checkSymlinkEscape(rootAbs, abs); err != nil {
+		return "", err
+	}
+
+	return abs, nil
+}
+
 // checkSymlinkEscape resolves symlinks on root and on the deepest existing
 // ancestor of abs, then verifies the resolved target still sits under the
 // resolved root. The non-existing tail (a file being created) cannot contain a
