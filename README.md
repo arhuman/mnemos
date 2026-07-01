@@ -10,10 +10,14 @@
 
 > **Local memory for AI agents. Source citations included.**
 
-Claude Code is powerful, but it forgets your project context. It re-derives decisions
-you already made and guesses instead of reading what you wrote.
+Claude Code is powerful, but it forgets your project context:
 
-**mnemos** gives it a local, cited memory of:
+- it forgets why you rejected an architecture,
+- it misses your ADRs,
+- it invents answers instead of reading your docs,
+- it can't reliably cite where a claim came from.
+
+**mnemos** fixes that by giving it a local, cited memory of:
 
 - your ADRs and design docs
 - your notes and runbooks
