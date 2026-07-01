@@ -8,15 +8,80 @@
 
 ### Give your AI agent a memory it can cite.
 
-**mnemos** is a local-first memory for AI agents, shipped as a single Go binary.
-It indexes your project's notes, docs, ADRs, source, and OKF knowledge base, then
-exposes them over [MCP](https://modelcontextprotocol.io) so Claude Code (or any MCP
-client) can **search, read, and cite your own knowledge** instead of guessing, with no
-external services (no Ollama, Qdrant, Chroma, Python, Node, or mandatory Docker).
+> **Local memory for AI agents. Source citations included.**
+
+Claude Code is powerful, but it forgets your project context. It re-derives decisions
+you already made and guesses instead of reading what you wrote.
+
+**mnemos** gives it a local, cited memory of:
+
+- your ADRs and design docs
+- your notes and runbooks
+- your source code
+- your OKF knowledge base
+
+No vector database. No Ollama. No Python or Node service. Just one cgo-free Go binary
+that indexes your files — any plain-Markdown folder works as-is — and serves them over
+[MCP](https://modelcontextprotocol.io), so Claude can **search, read, and cite your own
+knowledge** instead of guessing, with every answer landing on the exact `file#section`
+and line range.
 
 <p align="center">
   <img src="docs/demo.gif" alt="mnemos CLI: init, ingest, and a search that returns a cited result" width="760">
 </p>
+
+## Try it in 60 seconds
+
+```bash
+# 1. install — one cgo-free binary into $GOBIN (requires Go 1.25+)
+git clone https://github.com/arhuman/mnemos.git && cd mnemos
+make install
+
+# 2. index a project
+cd ~/work/myproject
+mnemos init                                 # creates ./.mnemos.toml + ./.mnemos/
+mnemos ingest docs --collection myproject   # index a directory
+mnemos search "why did we choose this architecture"
+```
+
+> Prefer `make build` (→ `./bin/mnemos`) to keep it off your `$PATH`. The default build
+> is pure Go / cgo-free (`CGO_ENABLED=0`).
+
+`search` prints citations you can open:
+
+```text
+1. security/scim.md#Provisioning
+   lines 42-88
+   score 12.7
+```
+
+Then wire it into Claude Code (note the **absolute** `--config` path):
+
+```bash
+claude mcp add mnemos -- mnemos serve --config /abs/path/to/myproject/.mnemos.toml
+```
+
+Now Claude answers from your project instead of guessing, and shows its source:
+
+> **You:** How do I recover lost commits?
+>
+> **Claude:** Per `recovery/reflog.md`, the reflog records where `HEAD` and each branch
+> tip has pointed — even after a hard reset — so you can check out the lost commit's
+> hash. *(recovery/reflog.md — "Reflog: recover lost commits")*
+
+That's the whole loop — **index → ask → cited answer.** Everything below is depth:
+[why it's built this way](#why-mnemos), [how it works](#how-it-works), and the full
+[capabilities](#capabilities).
+
+<details>
+<summary>⚠️ One gotcha: a document's identity is its path <em>relative to where you ran <code>ingest</code></em></summary>
+
+A document's URI is its path relative to the scan root you ingested (`docs` above), not
+your working directory. Ingesting two directories that each contain (say) `index.md`
+resolves both to the same URI: the **second ingest silently overwrites the first**. To
+index several trees cleanly, ingest from one common root (`mnemos ingest .`). Details in
+[docs/paths-and-indexing.md](docs/paths-and-indexing.md).
+</details>
 
 ## Why mnemos
 
@@ -46,73 +111,81 @@ Under the hood, the binary embeds an MCP server, an indexing pipeline, a SQLite
 store, full-text search, an incremental file watcher, and an admin CLI. See
 [docs/architecture.md](docs/architecture.md).
 
-## Install
+## Does it actually retrieve?
 
-```bash
-git clone https://github.com/arhuman/mnemos.git && cd mnemos
-make install        # builds a cgo-free binary into $GOBIN
-# or: make build    # -> ./bin/mnemos
-```
-
-Requires Go 1.25+. The default build is **pure Go / cgo-free** (`make build` sets `CGO_ENABLED=0`).
-
-## Quick start
-
-mnemos keeps everything under one anchor, the **MNEMOS_DIR** (default `~/.mnemos`,
-or a project-local `./.mnemos`). Content you want searchable lives in its `kb/`;
-you bring it in with `add`.
-
-```bash
-cd ~/work/myproject
-mnemos init                                 # scaffolds ./.mnemos (kb/, state/, models/, mnemos.toml)
-mnemos add ~/work/myproject/docs --into docs --collection myproject   # copy a dir into kb/docs and index
-mnemos search "rule engine"                 # query from the CLI
-```
-
-`search` prints citations:
+**A cited hit, out of the box** (default lexical build, on a shipped example bundle):
 
 ```text
-1. docs/security/scim.md#Provisioning
-   lines 42-88
-   score 12.7
+$ mnemos ingest examples/git-recipes/bundle --collection git
+$ mnemos search "recover lost commits" --limit 1
+1. recovery/reflog.md#Gotcha
+   lines 24-28
+   score 7.8
 ```
 
-Citations use the document's URI: its path **relative to `kb/`**. The database and
-models live in the MNEMOS_DIR but outside `kb/`, so they are never indexed.
-Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
+Every result is a real `file#section` and line range you can open — that is the whole
+point.
 
-> Coming from an older mnemos? `[storage].path`/`[capture].dir` and the
-> `~/.mnemos.toml` + `./.mnemos.toml` layering are gone. Move an existing workspace
-> with `mnemos migrate --from <old-root> --to ~/.mnemos` (copies by default).
+**Retrieval quality, measured.** `mnemos eval` auto-derives held-out query→source pairs
+from an OKF bundle (it strips each example block from its own document, then checks
+whether retrieval still finds the right document) and reports doc-level metrics. On the
+shipped `examples/git-recipes` bundle (6 recipes, keyword-style queries):
+
+| Retriever | Hit@1 | Recall@12 | MRR@12 |
+|---|---:|---:|---:|
+| Lexical, default (FTS5 / bm25) | 0.83 | 0.83 | 0.83 |
+| Semantic + hybrid (`--semantic`) | **1.00** | **1.00** | **1.00** |
+
+All three are **fractions in `[0,1]`** (×100 for a percentage); higher is better. The
+`@K` is the retrieval depth — top‑1 for Hit, top‑12 for the rest:
+
+- **Hit@1** — share of queries whose **#1** result is the correct document (`0.83` = 5/6).
+- **Recall@12** — share where the correct document appears **anywhere in the top 12**.
+- **MRR@12** — mean reciprocal rank: average of `1/(rank of the first correct doc)` over the top 12 (`1.0` = always ranked first).
+
+The default lexical build already nails keyword retrieval. The optional embed build (see
+[Semantic search](#semantic-search-optional)) earns its keep on harder,
+natural-language-over-structured-data queries: on the `examples/onpage-seo` bundle, whose
+held-out answers are JSON-LD / sitemap-XML blocks that share *no* keywords with their
+prose, lexical scores `0.00` while `--semantic` recovers Hit@1 `0.57` / Recall@12 `0.86`.
+Reproduce (N is 6 and 7 respectively — smoke signals, not benchmarks):
+
+```bash
+mnemos eval examples/git-recipes/bundle              # lexical → 0.83
+make build-embed && mnemos models install all-MiniLM-L6-v2
+mnemos eval examples/git-recipes/bundle --semantic   # hybrid  → 1.00
+mnemos eval examples/onpage-seo/bundle --semantic    # the hard case → 0.57
+```
 
 ## Connect Claude Code
 
-Point the MCP server at a workspace with an **absolute `--mnemos-dir`**:
+The 60-second path above used `claude mcp add` with an **absolute `--config`** path:
 
 ```bash
-claude mcp add mnemos -- mnemos serve --mnemos-dir /abs/path/to/.mnemos
+claude mcp add mnemos -- mnemos serve --config /abs/path/to/project/.mnemos.toml
 ```
 
-Or commit it with the repo via `.mcp.json`:
+To share it with the repo, commit it via `.mcp.json` instead:
 
 ```json
-{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--mnemos-dir", "/abs/path/to/.mnemos"] } } }
+{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--config", "/abs/path/to/project/.mnemos.toml"] } } }
 ```
 
 Verify with `claude mcp list` (should show `mnemos ✓ connected`) and `/mcp` inside
 a session. Claude then calls the tools automatically; see [Capabilities](#capabilities).
 
 <details>
-<summary>Why the <code>--mnemos-dir</code> path must be absolute</summary>
+<summary>Why the <code>--config</code> path must be absolute</summary>
 
 Claude Code does not guarantee the working directory it spawns the server in, so
-anchoring to an absolute MNEMOS_DIR is what makes retrieval reliable: the database,
-capture, and the kb URI namespace are all fixed subpaths of it, regardless of where
-Claude Code launches the server. A bare `mnemos serve` falls back to project
-discovery and then `~/.mnemos`, which only matches your data when the cwd is right —
-which Claude Code does not promise. When the database can't be found, `serve` fails
-with a clear error instead of silently returning empty results. (`--config
-/abs/.mnemos/mnemos.toml` works too; its directory becomes the MNEMOS_DIR.)
+anchoring to the config file is what makes retrieval reliable. `mnemos serve`
+resolves a relative `[storage].path` against the config file's directory, so an
+absolute `--config` is all you need: the database, capture directory, and tree
+root all anchor next to that file regardless of where Claude Code launches the
+server. A bare `mnemos serve` only finds your data when the server's working
+directory happens to be the project root, which Claude Code does not promise; when
+the database can't be found, `serve` fails with a clear error instead of silently
+returning empty results.
 </details>
 
 <p align="center">
@@ -121,9 +194,11 @@ with a clear error instead of silently returning empty results. (`--config
 </p>
 
 <p align="center">
-  <img src="docs/demo-session.gif" alt="Claude Code answering a question from mnemos memory, with a file#section citation" width="760">
-  <br><em>Claude answers from memory and lands on the <code>file#section</code> source.</em>
+  <img src="docs/demo-session.gif" alt="Claude Code answering a keyword-free question via semantic search, citing recovery/reflog.md" width="760">
+  <br><em><strong>Semantic search:</strong> the question says <em>"disappeared"</em> — a word that appears nowhere in the notes — yet Claude finds and cites <code>recovery/reflog.md</code>.</em>
 </p>
+
+> This clip uses the **optional semantic build** (`make install-embed` + `mnemos models install all-MiniLM-L6-v2` + `use_vectors = true`; see [Semantic search](#semantic-search-optional)). The **default `make install`** binary is lexical-only, so it won't answer a keyword-free question like this — search by keyword instead (e.g. `mnemos search "recover lost commits"`, which hits the same doc).
 
 ### Make Claude use memory automatically (optional skill)
 
@@ -165,7 +240,7 @@ commands). Note the spelling: `mnemos.search` is the **MCP tool** Claude calls;
 
 ### Write (requires `allow_write = true`)
 
-- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the kb instead of auto-naming under `kb/capture`. Content is **secret-scanned** before it is written and indexed.
+- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the OKF tree instead of auto-naming under `[capture].dir`. Content is **secret-scanned** before it is written and indexed.
 - **`mnemos.okfy`**: convert an existing `.txt`/`.md` file in the tree into an OKF document (frontmatter + body) at `out` (defaults to the source path with a `.md` extension) and index it, leaving the source intact. The source body is **secret-scanned** first.
 
 ### Manage (requires `allow_delete = true`)
@@ -181,7 +256,7 @@ Run a watcher to reindex on change (incremental; removes deleted files):
 mnemos watch . --collection myproject
 ```
 
-Enable write-back in `mnemos.toml` so Claude can capture and manage notes:
+Enable write-back in `.mnemos.toml` so Claude can capture and manage notes:
 
 ```toml
 [mcp]
@@ -202,15 +277,18 @@ Local semantic + hybrid retrieval is fully implemented but compiled behind the
 binary. To enable it:
 
 ```bash
-make build-embed            # or: make install-embed  (still cgo-free, CGO_ENABLED=0)
-mnemos models install       # downloads an embedding model into <MNEMOS_DIR>/models
-mnemos reindex --embeddings # compute vectors for already-indexed chunks
+make build-embed                       # or: make install-embed  (still cgo-free, CGO_ENABLED=0)
+mnemos models install all-MiniLM-L6-v2 # downloads the embedding model into ~/.mnemos/models
+mnemos reindex --embeddings            # compute vectors for already-indexed chunks
 mnemos search "why did we choose this architecture" --semantic
 ```
 
 `--semantic` fuses bm25 with vector similarity, so natural-language queries that the
 lexical index misses still resolve. Without the embed build (or an installed model)
 the flag is rejected with a clear message; plain `mnemos search` always works.
+
+How it works under the hood (model, pure-Go ONNX inference, RRF fusion):
+[docs/architecture.md](docs/architecture.md#semantic-search-the-embed-build).
 
 ## OKF support
 
@@ -228,79 +306,16 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 
 ## Reference
 
-<details>
-<summary><strong>All commands</strong></summary>
-
-| Command | Purpose |
-|---|---|
-| `mnemos init [--global]` | Scaffold a MNEMOS_DIR (`./.mnemos` by default, `~/.mnemos` with `--global`) |
-| `mnemos add <source> [--into <subpath> --mode copy\|link --collection <c>]` | Bring external content into the kb and index it (`copy` snapshots; `link` symlinks a single file) |
-| `mnemos ingest <kb-subpath> --collection <c>` | Re-index content already inside the kb |
-| `mnemos migrate --from <old> [--to <dir> --move]` | Relocate a pre-MNEMOS_DIR workspace into the kb/ layout and reindex |
-| `mnemos search <query> [--collection --path --type --since --limit --semantic --json]` | Search the index (`--semantic` fuses lexical + vector; needs the embed build) |
-| `mnemos ls [path] [--collection --type --path --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
-| `mnemos eval <okf-bundle> [--baseline <f> --save --semantic --limit N]` | Retrieval-quality eval on an OKF bundle (`--semantic` evaluates the hybrid retriever) |
-| `mnemos watch <path> --collection <c>` | Watch and incrementally reindex |
-| `mnemos serve` | Run the MCP server (stdio) |
-| `mnemos status` | Show the workspace layout (anchor, kb, index db), counts, and FTS availability |
-| `mnemos version [-v]` | Print the version; `-v` adds commit, build date, and Go toolchain |
-| `mnemos models install` | Download an embedding model into `<MNEMOS_DIR>/models` (for the embed build) |
-| `mnemos reindex --embeddings` | Recompute and store embedding vectors for all chunks |
-| `mnemos validate <bundle> [--json]` | Validate an OKF v0.1 bundle for conformance |
-| `mnemos task list [--status <s> --collection <c>]` | List indexed Task documents grouped by status |
-| `mnemos forget <path>` | Remove a file from the OKF tree and de-index it (requires `allow_delete = true`) |
-| `mnemos mv <src> <dst>` | Move a file or directory within the OKF tree and re-index it (requires `allow_delete = true`) |
-| `mnemos okfy <file> [--collection --type --tags --out --force]` | Convert a `.txt`/`.md` file into an OKF document, then index it (source is kept intact) |
-
-</details>
-
-<details>
-<summary><strong>Configuration (<code>mnemos.toml</code>)</strong></summary>
-
-The config lives at `<MNEMOS_DIR>/mnemos.toml` and carries **behaviour only** — no
-location keys. Every path (kb, capture, database, models) derives from the
-MNEMOS_DIR; see [docs/paths-and-indexing.md](docs/paths-and-indexing.md) for how the
-anchor is resolved. The file is optional: a missing key falls back to the default
-shown below.
-
-```toml
-[indexing]
-include = ["**/*.md", "**/*.txt", "**/*.go", "**/*.sql"]
-exclude = [".git/**", "node_modules/**", "vendor/**", "dist/**"]
-max_file_bytes = 4194304    # skip any single file larger than this (0 disables)
-
-[chunking]
-target_tokens = 700
-overlap_tokens = 80
-
-[search]
-default_limit = 12
-use_vectors = false        # serve uses hybrid retrieval (the serve-side --semantic; needs the embed build)
-
-[mcp]
-transport = "stdio"
-allow_write = false        # gates mnemos.remember and mnemos.okfy
-allow_delete = false       # gates mnemos.forget and mnemos.move
-
-[capture]
-defer_to_watcher = false   # true => remember is write-only, watcher ingests
-
-[security]
-exclude_secrets = true
-exclude = ["**/.env", "**/*.pem", "**/*.key", "**/id_rsa", "**/secrets/**"]
-```
-
-</details>
-
-**Paths, URIs, and writes**, covering how state is located, what gets indexed, where writes
-land, and the idempotency/URI rules: see
-[docs/paths-and-indexing.md](docs/paths-and-indexing.md).
+- **[docs/commands.md](docs/commands.md)** — every CLI command and its flags.
+- **[docs/configuration.md](docs/configuration.md)** — the layered `.mnemos.toml`, with all defaults.
+- **[docs/paths-and-indexing.md](docs/paths-and-indexing.md)** — how state is located, what gets indexed, where writes land, and the idempotency/URI rules.
+- **[docs/architecture.md](docs/architecture.md)** — design principles and the retrieval-evaluation methodology.
 
 ## Security
 
 - No network, no telemetry; the MCP server is stdio-only.
 - Read-only by default. Write-back is opt-in (`allow_write = true`). Destructive operations (forget, move) require a separate opt-in (`allow_delete = true`).
-- All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the kb, symlink escapes, and `[security].exclude` globs are all rejected. The index database and models live outside the kb, so they are unreachable by any write or delete tool.
+- All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the tree root, symlink escapes, access to `.mnemos/`, and `[security].exclude` globs are all rejected.
 - Captured content is secret-scanned before it is written or indexed.
 - Path/secret exclusion patterns keep `.env`, keys, and secret dirs out of the index.
 

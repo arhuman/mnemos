@@ -96,6 +96,40 @@ fixed subpaths of one **MNEMOS_DIR**, resolved by `workspace` (see
 
 For the rationale behind specific decisions, see the [ADRs](adr/).
 
+## Semantic search (the `embed` build)
+
+The default binary is lexical-only (FTS5/bm25); the `embed` build tag
+(`make build-embed`) layers on local, cgo-free semantic + hybrid retrieval. The
+pipeline, end to end:
+
+- **Model.** `all-MiniLM-L6-v2` — 384-dimensional embeddings, BERT/WordPiece
+  tokenizer. Fetched on demand into `~/.mnemos/models` via
+  `mnemos models install all-MiniLM-L6-v2`.
+- **Inference, pure Go.** The `.onnx` model runs in-process on **gomlx (SimpleGo
+  backend) via onnx-gomlx** — deliberately *not* the C++ ONNX Runtime, whose Go
+  binding needs cgo + `libonnxruntime`; running in pure Go is what keeps the embed
+  build `CGO_ENABLED=0`. Tokenization is `github.com/sugarme/tokenizer` (pure Go,
+  reads the HF `tokenizer.json`). `internal/embed/onnx.go` mean-pools the token
+  vectors and L2-normalizes them (`MeanPool`/`L2Normalize`); the default build
+  compiles a no-op stub (`internal/embed/noop.go`) so none of these dependencies
+  enter the lexical binary.
+- **Storage.** `mnemos reindex --embeddings` writes one vector per chunk into
+  `embeddings(chunk_id, model, dim, vector)` — little-endian float32, already
+  L2-normalized so cosine similarity reduces to a dot product.
+- **Hybrid retrieval.** With `[search] use_vectors = true`, the `HybridRetriever`
+  (`internal/search/hybrid.go`) runs the bm25 and vector retrievers at a widened
+  candidate depth and fuses their two rankings with **Reciprocal Rank Fusion**
+  (`rrfK = 60`, `internal/search/rerank.go`): `score = Σ 1/(k + rankᵢ)`. RRF
+  combines the rankings without normalizing bm25's open-ended scores against
+  cosine's `[-1,1]`. If the vector side is empty (no embeddings, or the no-op
+  embedder), fusing the lone lexical list reproduces bm25 — so hybrid degrades
+  gracefully to lexical-only.
+- **Scale.** Vector search is a linear scan over the `embeddings` table (dim 384:
+  ~2 ms at 10k chunks, ~20 ms at 100k). Above ~50k chunks an approximate index is
+  the next step — see [ADR 0003](adr/0003-vector-search-scaling.md).
+
+Full rationale and the cgo-free decision: [ADR 0001](adr/0001-embeddings-cgo-free.md).
+
 ## Retrieval evaluation
 
 `mnemos eval <bundle>` measures retrieval quality over an OKF bundle. OKF
