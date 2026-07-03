@@ -218,6 +218,144 @@ func ListDocuments(ctx context.Context, db *sql.DB, f ListFilter) ([]DocumentRow
 	return out, nil
 }
 
+// DocumentDigest is the subset of a document the doctor detectors need: the
+// content_hash (for exact-duplicate grouping, not carried by DocumentRow), the
+// byte size (oversized check), and the raw frontmatter JSON (tag hygiene and the
+// missing-frontmatter check). Kept separate from DocumentRow so the browse/list
+// path is unaffected.
+type DocumentDigest struct {
+	URI             string
+	Collection      string
+	ContentHash     string
+	FrontmatterJSON string
+	SizeBytes       int64
+}
+
+// ListDocumentDigests returns a digest per document, narrowed by the same
+// ListFilter as ListDocuments so `doctor --path/--collection` scoping reuses one
+// filter vocabulary. frontmatter_json may be NULL, so it is scanned through
+// sql.NullString.
+func ListDocumentDigests(ctx context.Context, db *sql.DB, f ListFilter) ([]DocumentDigest, error) {
+	q := `SELECT uri, collection, content_hash, size_bytes, frontmatter_json
+	      FROM documents`
+	var where []string
+	var args []any
+	if f.Collection != "" {
+		where = append(where, "collection = ?")
+		args = append(args, f.Collection)
+	}
+	if f.PathPrefix != "" {
+		where = append(where, "uri LIKE ? ESCAPE '\\'")
+		args = append(args, EscapeLike(f.PathPrefix)+"%")
+	}
+	if f.FileType != "" {
+		where = append(where, "uri LIKE ? ESCAPE '\\'")
+		args = append(args, "%."+EscapeLike(f.FileType))
+	}
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	q += " ORDER BY uri"
+	if f.Limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, f.Limit)
+	}
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list document digests: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []DocumentDigest
+	for rows.Next() {
+		var (
+			d         DocumentDigest
+			frontJSON sql.NullString
+		)
+		if err := rows.Scan(&d.URI, &d.Collection, &d.ContentHash, &d.SizeBytes, &frontJSON); err != nil {
+			return nil, fmt.Errorf("storage: scan document digest: %w", err)
+		}
+		d.FrontmatterJSON = frontJSON.String
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iterate document digests: %w", err)
+	}
+
+	return out, nil
+}
+
+// BrokenLink is one link edge whose target uri (links.dst_doc) has no matching
+// document — i.e. an inbound reference left dangling (e.g. after a move, since V0
+// does not rewrite inbound links). SrcURI is the document that contains the link.
+type BrokenLink struct {
+	DstURI string
+	SrcURI string
+}
+
+// ListBrokenLinks returns every link edge whose dst_doc uri does not resolve to a
+// document, joined back to the source document's uri. links.dst_doc is a plain
+// uri with no foreign key, so a LEFT JOIN onto documents.uri finds the misses.
+// Ordered by (src, dst) for stable output.
+func ListBrokenLinks(ctx context.Context, db *sql.DB) ([]BrokenLink, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT src.uri, l.dst_doc
+		FROM links l
+		JOIN documents src ON l.src_doc = src.id
+		LEFT JOIN documents dst ON l.dst_doc = dst.uri
+		WHERE dst.uri IS NULL
+		ORDER BY src.uri, l.dst_doc`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list broken links: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []BrokenLink
+	for rows.Next() {
+		var b BrokenLink
+		if err := rows.Scan(&b.SrcURI, &b.DstURI); err != nil {
+			return nil, fmt.Errorf("storage: scan broken link: %w", err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iterate broken links: %w", err)
+	}
+
+	return out, nil
+}
+
+// ListDocsWithoutChunks returns the uris of documents that have no chunk rows —
+// an indexed document with no extractable body (empty or whitespace-only). Used
+// by the doctor structural-gap check. Ordered by uri.
+func ListDocsWithoutChunks(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT d.uri
+		FROM documents d
+		LEFT JOIN chunks c ON c.document_id = d.id
+		WHERE c.id IS NULL
+		ORDER BY d.uri`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list docs without chunks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			return nil, fmt.Errorf("storage: scan chunkless doc uri: %w", err)
+		}
+		out = append(out, uri)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iterate chunkless docs: %w", err)
+	}
+
+	return out, nil
+}
+
 // EscapeLike escapes the LIKE wildcards (% and _) and the escape character in a
 // literal so a path prefix/extension is matched verbatim rather than as a
 // pattern. Use it together with `ESCAPE '\'` in a LIKE clause. Shared by the
