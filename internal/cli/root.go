@@ -78,6 +78,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newMigrateCmd(state))
 	root.AddCommand(newSearchCmd(state))
 	root.AddCommand(newLsCmd(state))
+	root.AddCommand(newDoctorCmd(state))
 	root.AddCommand(newEvalCmd(state))
 	root.AddCommand(newServeCmd(state))
 	root.AddCommand(newWatchCmd(state))
