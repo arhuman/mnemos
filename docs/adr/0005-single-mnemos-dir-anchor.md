@@ -22,8 +22,8 @@ resolution: **config** (`--config`, or `~/.mnemos.toml` + `./.mnemos.toml`) →
 **tree root** (the `--config` directory, or the cwd) → **storage/capture**
 (`[storage].path`, `[capture].dir`, resolved against the tree root). This chain is
 elegant for a single in-project KB but brittle elsewhere, and it has produced a
-family of footguns documented in `KB_LOCATION.md` and evaluated against two
-external models in `.claude/doc/mnemos-dir-unification.md`:
+family of footguns evaluated against two external models in
+`.claude/doc/mnemos-dir-unification.md`:
 
 1. **cwd-MCP**: an MCP server's working directory is not guaranteed by the client,
    so a relative `[storage].path` followed the wrong directory. The current
@@ -194,7 +194,6 @@ as the documented escape hatch.
 
 ## References
 
-- Design analysis: `KB_LOCATION.md` (footgun catalogue, vocabulary table).
 - Multi-model evaluation: `.claude/doc/mnemos-dir-unification.md` (+ `-gemini.md`,
   `-qwen.md`).
 - Previous ADR: [0002: Writing to the full OKF tree](0002-okf-tree-write-delete-move.md)
