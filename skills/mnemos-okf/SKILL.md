@@ -150,8 +150,9 @@ says "where were we", "resume", "continue", "what's the current task":
 
 1. `mnemos.context("project status")` (and/or read `status.md` if the tree has
    one) — current goal, constraints.
-2. Open tasks: `mnemos.list(type: "task")` filtered on non-done statuses, or
-   `mnemos task list` in a terminal.
+2. Open tasks: `mnemos task list` in a terminal, or `mnemos.list(path:
+   "tasks")` then read the state files (the MCP `type` filter matches file
+   extensions, not OKF document types).
 3. Recent decisions and the latest journal entry: `mnemos.search`, `--since`
    on the CLI.
 

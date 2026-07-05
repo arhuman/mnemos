@@ -229,6 +229,49 @@ Capture is deliberately conservative (durable facts only, secret-scanned) and st
 gated behind `allow_write`/`allow_delete`: the skill never grants access the config
 hasn't opted into. See [`skills/mnemos-okf/SKILL.md`](skills/mnemos-okf/SKILL.md).
 
+### The memory loop
+
+mnemos is local project memory for coding agents: cited recall, durable project state, knowledge consolidation.
+
+```text
+prompt
+  -> recall (search first, cite)
+  -> act
+  -> capture durable facts to the inbox
+  -> update project/task state
+  -> consolidate raw captures into canonical docs
+  -> cite everything
+```
+
+The bundled [`mnemos-okf` skill](skills/mnemos-okf/SKILL.md) encodes this as six modes: RECALL, CAPTURE, OKF, RESTORE, TASK, and CONSOLIDATE. Tasks are `Task` documents grouped by `mnemos task list`. Consolidation never overwrites silently: conflicts are surfaced and passes are journaled.
+
+The reference layout is in [`examples/project-memory/bundle/`](examples/project-memory/bundle/), a fictional project with status, constraints, decisions, tasks (state/history split), and a consolidation journal. Ingest it to see `mnemos task list` in action:
+
+```
+mnemos add examples/project-memory/bundle --into aurora --collection aurora
+mnemos task list
+```
+
+```
+in_progress (1)
+  aurora/tasks/rate-limit-ingest.md  Rate-limit the ingest endpoint
+todo (1)
+  aurora/tasks/csv-export.md  Add CSV export
+done (1)
+  aurora/tasks/fix-auth-timeout.md  Fix auth token timeout
+```
+
+### Automation with hooks
+
+The skill is advisory: the model decides when to fire each mode. Claude Code hooks make the memory loop deterministic. Merge [`skills/mnemos-okf/hooks/settings.example.json`](skills/mnemos-okf/hooks/settings.example.json) into your `.claude/settings.json` to activate two hooks:
+
+| Hook | Matcher | Effect |
+|------|---------|--------|
+| `SessionStart` | `startup\|resume\|compact` | Injects the working set at session start: `mnemos task list` plus recent decisions (`mnemos ls decisions`). The `compact` matcher re-injects it after context compaction. |
+| `UserPromptSubmit` | recall cue phrases | When the prompt matches "as we decided", "what was", "remember when", and similar cues, injects the top 3 `mnemos search` hits. Requires `jq`. Silent no-op when no cue matches. |
+
+PreCompact and Stop persistence (session summaries, capture flush) stays in the skill because those hook events cannot inject context into the model.
+
 ## Capabilities
 
 Claude reaches your memory through MCP tools (and you through the matching CLI

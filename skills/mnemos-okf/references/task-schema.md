@@ -36,8 +36,8 @@ TODO — the single next concrete step.
 ```
 
 Slug: kebab-case from the title (`fix-logout-cookie.md`). Before creating,
-check `mnemos.list(type: "task")` for an equivalent open task — update it
-rather than duplicating.
+check for an equivalent open task — `mnemos task list` (CLI) or
+`mnemos.list(path: "tasks")` (MCP) — and update it rather than duplicating.
 
 ### Inference rules (silent auto-creation)
 
@@ -93,5 +93,5 @@ When asked "what's pending?", "current task", or during RESTORE:
 ```
 
 Every line cites its task file. Omit empty sections. Statuses come from
-frontmatter — trust `mnemos task list` / `mnemos.list(type: "task")`, don't
-rescan bodies.
+frontmatter — trust `mnemos task list`; over MCP, `mnemos.list(path: "tasks")`
+then read the state files. Don't rescan bodies.

@@ -71,6 +71,14 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   overwritten, journaled passes). Frontmatter contracts and the full
   consolidation procedure live in `references/task-schema.md` and
   `references/consolidation.md`, read on demand.
+- Claude Code hooks example at `skills/mnemos-okf/hooks/settings.example.json`:
+  deterministic working-set injection via `SessionStart` (at startup, resume,
+  and after compaction) and cue-gated recall via `UserPromptSubmit`; requires
+  `jq`; silent no-op when no cue matches.
+- `examples/project-memory/`: OKF-conformant project-memory bundle (status,
+  constraints, decisions, tasks with state/history split, consolidation journal)
+  demonstrating `mnemos add` and `mnemos task list`.
+- README: memory loop and hook automation documented under "Connect Claude Code".
 
 ### Added
 - Single `MNEMOS_DIR` workspace model (ADR 0005, Phase 2): one anchor from which
