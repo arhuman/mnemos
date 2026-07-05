@@ -63,6 +63,14 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   to 0 to disable.
 - Version metadata stamped via `-ldflags -X` (`mnemos version -v`).
 - Optional Claude Code `mnemos-okf` skill bundled under `skills/`.
+- `mnemos-okf` skill reworked from three modes to six: RECALL (bounded to two
+  searches), CAPTURE (inbox-first with hard exclusions), OKF, plus RESTORE
+  (session working set with citations), TASK (tasks as `type: task` documents
+  with state/history split and silent auto-creation), and CONSOLIDATE
+  (five-bucket triage, dedup into canonical docs, conflicts surfaced instead of
+  overwritten, journaled passes). Frontmatter contracts and the full
+  consolidation procedure live in `references/task-schema.md` and
+  `references/consolidation.md`, read on demand.
 
 ### Added
 - Single `MNEMOS_DIR` workspace model (ADR 0005, Phase 2): one anchor from which
