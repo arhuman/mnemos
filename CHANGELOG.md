@@ -75,6 +75,10 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   deterministic working-set injection via `SessionStart` (at startup, resume,
   and after compaction) and cue-gated recall via `UserPromptSubmit`; requires
   `jq`; silent no-op when no cue matches.
+- `make install-hooks` target merges those hooks into `~/.claude/settings.json`
+  idempotently (marker-keyed, keeps a `.bak`); `install-skill` now calls it so a
+  single install both copies the skill and activates its hooks. `SKIP_HOOKS=1`
+  opts out.
 - `examples/project-memory/`: OKF-conformant project-memory bundle (status,
   constraints, decisions, tasks with state/history split, consolidation journal)
   demonstrating `mnemos add` and `mnemos task list`.
@@ -99,6 +103,14 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   resolution source, kb root, index db).
 
 ### Changed
+- Workspace resolution adds a `$CLAUDE_PROJECT_DIR` rung (precedence 4, after
+  `$MNEMOS_DIR` and before the cwd walk-up): an unpinned `mnemos serve` in a Claude
+  Code session resolves the session's project instead of leaking the global `~/.mnemos`.
+  It fails closed: a signalled project with no `.mnemos` binds to its canonical
+  uninitialized location so an absent database reports "run mnemos init" rather than
+  silently serving the global KB. Bare invocations with no `$CLAUDE_PROJECT_DIR` still
+  fall back to the global default. See ADR 0005 (amended). MCP `roots/list` resolution
+  and a degraded no-workspace serve mode are deferred follow-ups.
 - Configuration carries behaviour only (`[indexing]`, `[chunking]`, `[search]`,
   `[mcp]`, `[capture].defer_to_watcher`, `[security]`). All content and state
   locations are derived from `MNEMOS_DIR`, not configured.
