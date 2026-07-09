@@ -87,15 +87,28 @@ type Options struct {
 
 // Resolve determines the MNEMOS_DIR and its Layout by precedence:
 //
-//  1. --config <file>      → MnemosDir is the file's directory; Config is the file
-//  2. --mnemos-dir <dir>   → that directory
-//  3. $MNEMOS_DIR          → that directory
-//  4. project ./.mnemos    → nearest one walking up from cwd, bounded by the git
+//  1. --config <file>       → MnemosDir is the file's directory; Config is the file
+//  2. --mnemos-dir <dir>    → that directory
+//  3. $MNEMOS_DIR           → that directory
+//  4. $CLAUDE_PROJECT_DIR   → resolve within that project, FAIL CLOSED: if the
+//     project has no .mnemos, bind to its canonical (uninitialized) location so the
+//     absent database yields an actionable "run mnemos init" error, never a silent
+//     fall-through to the global default. Claude Code sets this variable in a
+//     spawned MCP server's environment, so an unpinned `serve` lands on the right
+//     project's workspace instead of leaking the global one.
+//  5. project ./.mnemos     → nearest one walking up from cwd, bounded by the git
 //     root (so an unrelated parent's .mnemos is never picked up)
-//  5. ~/.mnemos            → the global default
+//  6. ~/.mnemos             → the global default (reached only when no project
+//     context is signalled)
 //
 // The chosen directory need not exist; commands that read state fail with an
 // actionable error when the database is absent.
+//
+// MCP roots/list would be a more robust project signal than $CLAUDE_PROJECT_DIR,
+// but the client only answers it inside an initialized session — after serve has
+// already opened the store — so consuming it requires deferring workspace
+// resolution and DB binding until post-init. That lifecycle change is tracked
+// separately; $CLAUDE_PROJECT_DIR gives the same routing at process start.
 func Resolve(opts Options) (Layout, error) {
 	env := opts.Env
 	if env == nil {
@@ -132,6 +145,28 @@ func Resolve(opts Options) (Layout, error) {
 		}
 		l := New(abs)
 		l.Source = "$MNEMOS_DIR"
+
+		return l, nil
+	}
+
+	// A CLAUDE_PROJECT_DIR signals a project session (Claude Code sets it in the
+	// spawned server's environment). Resolve within that project and fail closed:
+	// if it has no .mnemos, bind to its canonical uninitialized location so an
+	// absent database surfaces "run mnemos init" rather than silently serving the
+	// global ~/.mnemos — the wrong-project leak this precedence exists to prevent.
+	if cpd := env("CLAUDE_PROJECT_DIR"); cpd != "" {
+		if proj := findProjectDir(cpd); proj != "" {
+			l := New(proj)
+			l.Source = "project $CLAUDE_PROJECT_DIR"
+
+			return l, nil
+		}
+		abs, err := filepath.Abs(cpd)
+		if err != nil {
+			return Layout{}, fmt.Errorf("workspace: resolve $CLAUDE_PROJECT_DIR %q: %w", cpd, err)
+		}
+		l := New(filepath.Join(abs, DirName))
+		l.Source = "project $CLAUDE_PROJECT_DIR (uninitialized)"
 
 		return l, nil
 	}

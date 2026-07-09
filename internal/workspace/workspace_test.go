@@ -67,6 +67,72 @@ func TestResolveEnvBeatsProjectAndDefault(t *testing.T) {
 	require.Contains(t, l.Source, "MNEMOS_DIR")
 }
 
+func TestResolveClaudeProjectDirFound(t *testing.T) {
+	// $CLAUDE_PROJECT_DIR points at a project that has a .mnemos: use it.
+	proj := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, ".mnemos"), 0o750))
+
+	l, err := workspace.Resolve(workspace.Options{
+		Env:  func(k string) string { return map[string]string{"CLAUDE_PROJECT_DIR": proj}[k] },
+		Home: "/home/u",
+		Cwd:  t.TempDir(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(proj, ".mnemos"), l.MnemosDir)
+	require.Contains(t, l.Source, "CLAUDE_PROJECT_DIR")
+}
+
+func TestResolveClaudeProjectDirFailsClosedNotGlobal(t *testing.T) {
+	// $CLAUDE_PROJECT_DIR is set but the project has no .mnemos: bind to its
+	// canonical (uninitialized) location, NEVER fall through to ~/.mnemos.
+	proj := t.TempDir()
+
+	l, err := workspace.Resolve(workspace.Options{
+		Env:  func(k string) string { return map[string]string{"CLAUDE_PROJECT_DIR": proj}[k] },
+		Home: "/home/u",
+		Cwd:  t.TempDir(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(proj, ".mnemos"), l.MnemosDir)
+	require.NotEqual(t, filepath.Join("/home/u", ".mnemos"), l.MnemosDir)
+	require.Contains(t, l.Source, "uninitialized")
+}
+
+func TestResolveClaudeProjectDirBeatsCwd(t *testing.T) {
+	// A project session ($CLAUDE_PROJECT_DIR, no .mnemos) must win over a cwd that
+	// happens to have a .mnemos: the session's project is authoritative, and it
+	// fails closed rather than picking up the cwd workspace.
+	proj := t.TempDir()
+	cwd := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(cwd, ".mnemos"), 0o750))
+
+	l, err := workspace.Resolve(workspace.Options{
+		Env:  func(k string) string { return map[string]string{"CLAUDE_PROJECT_DIR": proj}[k] },
+		Home: "/home/u",
+		Cwd:  cwd,
+	})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(proj, ".mnemos"), l.MnemosDir)
+	require.NotEqual(t, filepath.Join(cwd, ".mnemos"), l.MnemosDir)
+}
+
+func TestResolveEnvDirBeatsClaudeProjectDir(t *testing.T) {
+	// $MNEMOS_DIR (precedence 3) still wins over $CLAUDE_PROJECT_DIR (precedence 4).
+	envDir := t.TempDir()
+	proj := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, ".mnemos"), 0o750))
+
+	l, err := workspace.Resolve(workspace.Options{
+		Env: func(k string) string {
+			return map[string]string{"MNEMOS_DIR": envDir, "CLAUDE_PROJECT_DIR": proj}[k]
+		},
+		Home: "/home/u",
+	})
+	require.NoError(t, err)
+	require.Equal(t, envDir, l.MnemosDir)
+	require.Contains(t, l.Source, "MNEMOS_DIR")
+}
+
 func TestResolveProjectDirWalkingUp(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".mnemos"), 0o750))

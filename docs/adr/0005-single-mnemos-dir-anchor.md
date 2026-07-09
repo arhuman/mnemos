@@ -100,6 +100,48 @@ the primary topology when a project anchor is present. `mnemos status` always pr
 the effective `mode`, `mnemos_dir`, `kb` root, and `index.db` path, so "it works but
 on the wrong KB" cannot pass silently.
 
+#### Amendment (2026-07-20): `$CLAUDE_PROJECT_DIR` rung and fail-closed project resolution
+
+The precedence above left a hole for the MCP-server topology. A user-scoped
+registration (`claude mcp add --scope user mnemos -- mnemos serve`, no pinned
+`--config`/`--mnemos-dir`) relies on the cwd walk-up to find the project, but an MCP
+client does not guarantee the server's working directory — so an unpinned `serve` in a
+project without its own `.mnemos` fell through to the **global** KB and silently served
+the wrong project (documented in `.claude/doc/mnemos-10x-efficiency.md` §2.5). The
+current mitigation — an absolute `--config` per repo — is exactly the per-repo friction
+the single-registration model is meant to remove.
+
+Revised precedence (the full chain, `--config` included; new rung 4):
+
+1. `--config <file>`
+2. `--mnemos-dir <dir>`
+3. `$MNEMOS_DIR`
+4. **`$CLAUDE_PROJECT_DIR`** — Claude Code sets this in a spawned MCP server's
+   environment. Resolve within that project (walk up for `.mnemos`, git-bounded) and
+   **fail closed**: if the project has no `.mnemos`, bind to its canonical
+   *uninitialized* location (`$CLAUDE_PROJECT_DIR/.mnemos`) so the absent database
+   surfaces the existing "run `mnemos init`" error, **never** a silent fall-through to
+   the global KB.
+5. project `./.mnemos` from the cwd (walk up, git-bounded)
+6. `~/.mnemos` global default — reached only when **no** project context is signalled
+   (bare CLI invocation with no `$CLAUDE_PROJECT_DIR`); backward-compatible with the
+   existing global-KB deployment.
+
+This refines the "Discovery surprise" consequence below: a bare command in an unrelated
+directory still reaches the global KB, but a *signalled* project session that lacks a
+workspace now fails closed rather than leaking the global one. Pinned flags (rungs 1-3)
+are unchanged, so existing `--mnemos-dir ~/.mnemos` registrations behave exactly as
+before.
+
+**Deferred (own follow-up):** MCP `roots/list` is a more robust project signal than the
+environment variable, but the client answers it only inside an initialized session —
+after `serve` has already opened the store — so consuming it requires deferring
+workspace resolution and DB binding until post-init. That serve-lifecycle change, and a
+degraded "no workspace" serve mode (serve starts and every tool reports no-workspace,
+rather than the process refusing to start), are tracked as follow-ups to the task
+`tasks/mnemos-p1-workspace-resolution.md`. Implementation landed in
+`internal/workspace/workspace.go` (`Resolve` rung 4) with tests in `workspace_test.go`.
+
 ### 4. Ingestion becomes a managed store
 
 Because every URI resolves from `kb/`, content must live under `kb/`. Ingestion
