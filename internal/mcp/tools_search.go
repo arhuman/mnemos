@@ -29,6 +29,7 @@ type searchInput struct {
 type searchResult struct {
 	Title       string  `json:"title"`
 	URI         string  `json:"uri"`
+	Collection  string  `json:"collection"`
 	HeadingPath string  `json:"heading_path"`
 	StartLine   int     `json:"start_line"`
 	EndLine     int     `json:"end_line"`
@@ -81,6 +82,7 @@ func toSearchResult(r model.Result) searchResult {
 	return searchResult{
 		Title:       resultTitle(r),
 		URI:         r.URI,
+		Collection:  r.Collection,
 		HeadingPath: r.HeadingPath,
 		StartLine:   r.StartLine,
 		EndLine:     r.EndLine,

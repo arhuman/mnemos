@@ -77,10 +77,12 @@ func (s *Service) resolveLimit(limit int) int {
 }
 
 // Search runs q through r, applying the configured default limit when q.Limit is
-// unset. r is the retriever the surface chose (lexical FTS, or hybrid
-// lexical+vector); the service does not pick one.
+// unset and the server-side visibility boundary ([security].visibility.deny) so a
+// hidden collection can never surface. r is the retriever the surface chose
+// (lexical FTS, or hybrid lexical+vector); the service does not pick one.
 func (s *Service) Search(ctx context.Context, r search.Retriever, q search.Query) ([]model.Result, error) {
 	q.Limit = s.resolveLimit(q.Limit)
+	q.ExcludeCollections = s.cfg.HiddenCollections()
 	results, err := r.Search(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("memory: search: %w", err)
@@ -96,6 +98,7 @@ func (s *Service) Search(ctx context.Context, r search.Retriever, q search.Query
 type ContextBlock struct {
 	Source     string
 	Title      string
+	Collection string
 	ModifiedAt string
 	Content    string
 	Truncated  bool
@@ -172,6 +175,7 @@ func (s *Service) ContextWithOptions(ctx context.Context, r search.Retriever, q 
 		blocks = append(blocks, ContextBlock{
 			Source:     fmt.Sprintf("%s:%d-%d", res.URI, res.StartLine, res.EndLine),
 			Title:      res.Title,
+			Collection: res.Collection,
 			ModifiedAt: res.ModifiedAt,
 			Content:    content,
 			Truncated:  truncated,

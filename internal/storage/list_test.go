@@ -44,6 +44,15 @@ func TestListDocuments(t *testing.T) {
 		require.Equal(t, "notes/idea.txt", rows[0].URI)
 	})
 
+	t.Run("exclude collections", func(t *testing.T) {
+		rows, err := storage.ListDocuments(context.Background(), db, storage.ListFilter{ExcludeCollections: []string{"notes"}})
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		for _, r := range rows {
+			require.NotEqual(t, "notes", r.Collection, "hidden collection must not surface")
+		}
+	})
+
 	t.Run("by path prefix", func(t *testing.T) {
 		rows, err := storage.ListDocuments(context.Background(), db, storage.ListFilter{PathPrefix: "adr/"})
 		require.NoError(t, err)

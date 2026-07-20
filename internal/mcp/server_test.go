@@ -141,6 +141,7 @@ func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string, args any, out
 type searchHitJSON struct {
 	Title       string  `json:"title"`
 	URI         string  `json:"uri"`
+	Collection  string  `json:"collection"`
 	HeadingPath string  `json:"heading_path"`
 	StartLine   int     `json:"start_line"`
 	EndLine     int     `json:"end_line"`
@@ -180,7 +181,24 @@ func TestSearchTool(t *testing.T) {
 	require.NotEmpty(t, out.Results)
 	require.Equal(t, "guide.md", out.Results[0].URI)
 	require.Equal(t, "SCIM Guide", out.Results[0].Title)
+	require.Equal(t, "epfl", out.Results[0].Collection, "results carry their collection as provenance")
 	require.NotZero(t, out.Results[0].EndLine)
+}
+
+// TestSearchVisibilityDenyThroughConfig proves the [security].visibility.deny
+// boundary flows end-to-end from config through NewServer into the query layer:
+// denying the corpus's only collection yields no results.
+func TestSearchVisibilityDenyThroughConfig(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Security.Visibility.Deny = []string{"epfl"}
+	cs := connectWith(t, ingestCorpus(t), srvCfg{cfg: cfg})
+
+	var out struct {
+		Results []searchHitJSON `json:"results"`
+	}
+	res := callTool(t, cs, "mnemos.search", map[string]any{"query": "SCIM provisioning Entra"}, &out)
+	require.False(t, res.IsError)
+	require.Empty(t, out.Results, "a hidden collection must not surface through the MCP search tool")
 }
 
 // TestToolResponseTextOnly pins the default wire shape: a successful call emits

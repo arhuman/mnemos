@@ -29,6 +29,7 @@ type contextInput struct {
 type contextBlock struct {
 	Source     string `json:"source"`
 	Title      string `json:"title,omitempty"`
+	Collection string `json:"collection,omitempty"`
 	ModifiedAt string `json:"modified_at,omitempty"`
 	Content    string `json:"content"`
 	Truncated  bool   `json:"truncated,omitempty"`
@@ -74,6 +75,7 @@ func (s *Server) handleContext(ctx context.Context, _ *mcpsdk.CallToolRequest, i
 		out.Context = append(out.Context, contextBlock{
 			Source:     b.Source,
 			Title:      b.Title,
+			Collection: b.Collection,
 			ModifiedAt: b.ModifiedAt,
 			Content:    b.Content,
 			Truncated:  b.Truncated,
