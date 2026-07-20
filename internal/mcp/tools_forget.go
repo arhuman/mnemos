@@ -30,22 +30,22 @@ func (s *Server) registerForget() {
 	}, s.handleForget)
 }
 
-func (s *Server) handleForget(ctx context.Context, _ *mcpsdk.CallToolRequest, in forgetInput) (*mcpsdk.CallToolResult, forgetOutput, error) {
+func (s *Server) handleForget(ctx context.Context, _ *mcpsdk.CallToolRequest, in forgetInput) (*mcpsdk.CallToolResult, any, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, forgetOutput{}, err
+		return nil, nil, err
 	}
 
 	// Defensive re-check: the tool is only registered when allow_delete is true,
 	// and the service re-checks too, but the handler refuses regardless so the
 	// gate cannot be bypassed.
 	if !s.cfg.MCP.AllowDelete {
-		return nil, forgetOutput{}, errors.New("delete disabled: set [mcp].allow_delete=true")
+		return nil, nil, errors.New("delete disabled: set [mcp].allow_delete=true")
 	}
 
 	res, err := s.svc.Forget(ctx, in.Path)
 	if err != nil {
-		return nil, forgetOutput{}, fmt.Errorf("mcp: %w", err)
+		return nil, nil, fmt.Errorf("mcp: %w", err)
 	}
 
-	return nil, forgetOutput{URI: res.URI, Deleted: res.Deleted}, nil
+	return s.result(forgetOutput{URI: res.URI, Deleted: res.Deleted})
 }

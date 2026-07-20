@@ -38,21 +38,21 @@ func (s *Server) registerMove() {
 	}, s.handleMove)
 }
 
-func (s *Server) handleMove(ctx context.Context, _ *mcpsdk.CallToolRequest, in moveInput) (*mcpsdk.CallToolResult, moveOutput, error) {
+func (s *Server) handleMove(ctx context.Context, _ *mcpsdk.CallToolRequest, in moveInput) (*mcpsdk.CallToolResult, any, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, moveOutput{}, err
+		return nil, nil, err
 	}
 
 	// Defensive re-check: the tool is only registered when allow_delete is true,
 	// and the service re-checks too, but the handler refuses regardless so the
 	// gate cannot be bypassed.
 	if !s.cfg.MCP.AllowDelete {
-		return nil, moveOutput{}, errors.New("delete disabled: set [mcp].allow_delete=true")
+		return nil, nil, errors.New("delete disabled: set [mcp].allow_delete=true")
 	}
 
 	res, err := s.svc.Move(ctx, in.From, in.To)
 	if err != nil {
-		return nil, moveOutput{}, fmt.Errorf("mcp: %w", err)
+		return nil, nil, fmt.Errorf("mcp: %w", err)
 	}
 
 	mv := res.Result
@@ -61,5 +61,5 @@ func (s *Server) handleMove(ctx context.Context, _ *mcpsdk.CallToolRequest, in m
 		out.DocumentID = mv.Entries[0].DocumentID
 	}
 
-	return nil, out, nil
+	return s.result(out)
 }

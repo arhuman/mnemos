@@ -37,9 +37,9 @@ func (s *Server) registerList() {
 	}, s.handleList)
 }
 
-func (s *Server) handleList(ctx context.Context, _ *mcpsdk.CallToolRequest, in listInput) (*mcpsdk.CallToolResult, listOutput, error) {
+func (s *Server) handleList(ctx context.Context, _ *mcpsdk.CallToolRequest, in listInput) (*mcpsdk.CallToolResult, any, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, listOutput{}, err
+		return nil, nil, err
 	}
 
 	entries, err := s.svc.List(ctx, browse.Options{
@@ -52,8 +52,8 @@ func (s *Server) handleList(ctx context.Context, _ *mcpsdk.CallToolRequest, in l
 		Limit:         in.Limit,
 	})
 	if err != nil {
-		return nil, listOutput{}, err
+		return nil, nil, err
 	}
 
-	return nil, listOutput{Entries: entries}, nil
+	return s.result(listOutput{Entries: entries})
 }

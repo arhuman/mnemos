@@ -48,7 +48,7 @@ func (s *Server) registerSearch() {
 	}, s.handleSearch)
 }
 
-func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in searchInput) (*mcpsdk.CallToolResult, searchOutput, error) {
+func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in searchInput) (*mcpsdk.CallToolResult, any, error) {
 	results, err := s.svc.Search(ctx, s.retriever, search.Query{
 		Text:          in.Query,
 		Collection:    in.Collection,
@@ -58,7 +58,7 @@ func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in
 		Limit:         in.Limit,
 	})
 	if err != nil {
-		return nil, searchOutput{}, err
+		return nil, nil, err
 	}
 
 	out := searchOutput{Results: make([]searchResult, 0, len(results))}
@@ -66,7 +66,7 @@ func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in
 		out.Results = append(out.Results, toSearchResult(r))
 	}
 
-	return nil, out, nil
+	return s.result(out)
 }
 
 // toSearchResult maps an internal Result to the MCP output shape, deriving a
