@@ -20,6 +20,15 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   Search over-fetches a candidate pool before applying the heading-path boost, so
   a boosted chunk can be promoted into the top results instead of being truncated
   by the bm25 `LIMIT`.
+- Result shaping at the MCP boundary to cut follow-up `read` calls and response
+  size (plan §3.3): `search`/`context` return the real `documents.title` and
+  `modified_at` instead of a heading-derived label; a heading/tag-only hit whose
+  content snippet is empty falls back to its heading path rather than a blank
+  line; `context` defaults to `group_by=document` (best chunk per document, with
+  `group_by=chunk` for the flat listing) and trims the low-relevance tail at a
+  relevance cliff; `context`/`read` accept `max_chars`/`max_tokens` budgets (with
+  a `truncated` flag) and `read` accepts `section`/`lines` to scope a document to
+  a subset of its chunks; `search` scores are rounded to one decimal.
 - Native OKF (Open Knowledge Format) support: frontmatter, cross-link edges
   (stored), and `index.md` structure handling.
 - MCP tools: `search`, `read`, `context`, `remember`, `okfy`, `list`, `forget`,

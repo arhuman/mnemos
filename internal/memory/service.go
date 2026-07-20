@@ -90,21 +90,66 @@ func (s *Service) Search(ctx context.Context, r search.Retriever, q search.Query
 }
 
 // ContextBlock is one retrieved passage ready to inject into an LLM prompt:
-// Source cites it as "uri:start-end" and Content is the full chunk text.
+// Source cites it as "uri:start-end", Content is the chunk text, and Title /
+// ModifiedAt label its owning document (empty when the document stored neither).
+// Truncated reports that a size budget clipped Content.
 type ContextBlock struct {
-	Source  string
-	Content string
+	Source     string
+	Title      string
+	ModifiedAt string
+	Content    string
+	Truncated  bool
 }
 
-// Context runs q through r and batch-loads each hit's full chunk content,
-// returning LLM-ready blocks in rank order. The retriever only returns a
+// ContextOptions shape a Context call. The zero value reproduces the original
+// flat, unbounded behavior; the MCP context tool opts into grouping and the
+// relevance cliff by default (see tools_context.go). GroupByDocument collapses
+// hits to the best chunk per document, widening recall breadth for a fixed limit;
+// Cliff trims the low-relevance tail; MaxChars/MaxTokens cap each block's content.
+type ContextOptions struct {
+	GroupByDocument bool
+	Cliff           bool
+	MaxChars        int
+	MaxTokens       int
+}
+
+// groupCandidateFactor is how many chunks Context over-fetches per requested
+// document when grouping, so collapsing to the best chunk per document can still
+// fill the limit with distinct documents rather than a handful repeated across
+// their chunks.
+const groupCandidateFactor = 4
+
+// Context runs q through r with the default (flat, unbounded) shaping.
+func (s *Service) Context(ctx context.Context, r search.Retriever, q search.Query) ([]ContextBlock, error) {
+	return s.ContextWithOptions(ctx, r, q, ContextOptions{})
+}
+
+// ContextWithOptions runs q through r and batch-loads each hit's full chunk
+// content, returning LLM-ready blocks in rank order. The retriever only returns a
 // highlighted snippet, so context fetches the whole chunk in one query (avoiding
 // the per-result N+1). A chunk that vanished between search and fetch falls back
-// to its snippet so the block still carries something.
-func (s *Service) Context(ctx context.Context, r search.Retriever, q search.Query) ([]ContextBlock, error) {
+// to its snippet so the block still carries something. When opts.GroupByDocument
+// is set it over-fetches candidates, keeps the best chunk per document, and caps
+// to the requested number of documents; opts.Cliff then trims the low-relevance
+// tail, and the size budget clips each block.
+func (s *Service) ContextWithOptions(ctx context.Context, r search.Retriever, q search.Query, opts ContextOptions) ([]ContextBlock, error) {
+	docLimit := s.resolveLimit(q.Limit)
+	if opts.GroupByDocument {
+		// Over-fetch chunks so the best-per-document collapse can still reach
+		// docLimit distinct documents.
+		q.Limit = docLimit * groupCandidateFactor
+	}
+
 	results, err := s.Search(ctx, r, q)
 	if err != nil {
 		return nil, err
+	}
+
+	if opts.GroupByDocument {
+		results = bestPerDocument(results, docLimit)
+	}
+	if opts.Cliff {
+		results = search.RelevanceCliff(results)
 	}
 
 	ids := make([]string, len(results))
@@ -116,17 +161,43 @@ func (s *Service) Context(ctx context.Context, r search.Retriever, q search.Quer
 		return nil, fmt.Errorf("memory: context chunks: %w", err)
 	}
 
+	budget := charBudget(opts.MaxChars, opts.MaxTokens)
 	blocks := make([]ContextBlock, 0, len(results))
 	for _, res := range results {
 		content, ok := contents[res.ID]
 		if !ok {
 			content = res.Snippet
 		}
+		content, truncated := truncateContent(content, budget)
 		blocks = append(blocks, ContextBlock{
-			Source:  fmt.Sprintf("%s:%d-%d", res.URI, res.StartLine, res.EndLine),
-			Content: content,
+			Source:     fmt.Sprintf("%s:%d-%d", res.URI, res.StartLine, res.EndLine),
+			Title:      res.Title,
+			ModifiedAt: res.ModifiedAt,
+			Content:    content,
+			Truncated:  truncated,
 		})
 	}
 
 	return blocks, nil
+}
+
+// bestPerDocument collapses rank-ordered results to the first (best-scoring) hit
+// per document uri, preserving order, and caps the count to limit documents.
+// Because results are already sorted best-first, the first hit seen for a uri is
+// its best chunk.
+func bestPerDocument(results []model.Result, limit int) []model.Result {
+	seen := make(map[string]bool, len(results))
+	out := make([]model.Result, 0, limit)
+	for _, r := range results {
+		if seen[r.URI] {
+			continue
+		}
+		seen[r.URI] = true
+		out = append(out, r)
+		if len(out) >= limit {
+			break
+		}
+	}
+
+	return out
 }

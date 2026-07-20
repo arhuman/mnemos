@@ -156,8 +156,11 @@ type citationJSON struct {
 }
 
 type contextBlockJSON struct {
-	Source  string `json:"source"`
-	Content string `json:"content"`
+	Source     string `json:"source"`
+	Title      string `json:"title"`
+	ModifiedAt string `json:"modified_at"`
+	Content    string `json:"content"`
+	Truncated  bool   `json:"truncated"`
 }
 
 type searchRefJSON struct {
@@ -359,7 +362,9 @@ func TestContextBatchPreservesSearchOrder(t *testing.T) {
 	var out struct {
 		Context []contextBlockJSON `json:"context"`
 	}
-	cres := callTool(t, cs, "mnemos.context", map[string]any{"query": query}, &out)
+	// group_by=chunk exercises the flat per-chunk listing this test pins; the
+	// tool's default (group_by=document) is covered by TestContextGroupsByDocument.
+	cres := callTool(t, cs, "mnemos.context", map[string]any{"query": query, "group_by": "chunk"}, &out)
 	require.False(t, cres.IsError)
 
 	// One block per search result, in the same rank order, each with content.
@@ -368,6 +373,34 @@ func TestContextBatchPreservesSearchOrder(t *testing.T) {
 		want := fmt.Sprintf("%s:%d-%d", r.URI, r.StartLine, r.EndLine)
 		require.Equal(t, want, out.Context[i].Source, "block %d source/order mismatch", i)
 		require.NotEmpty(t, out.Context[i].Content, "block %d must carry content", i)
+	}
+}
+
+// TestContextGroupsByDocument pins the tool's default shaping: group_by=document
+// collapses hits to the best chunk per document, so a query that matches several
+// chunks of one file yields a single block for that file rather than one per
+// chunk.
+func TestContextGroupsByDocument(t *testing.T) {
+	db := ingestCorpus(t)
+	cs := connect(t, db)
+
+	const query = "line alpha beta gamma"
+
+	var out struct {
+		Context []contextBlockJSON `json:"context"`
+	}
+	cres := callTool(t, cs, "mnemos.context", map[string]any{"query": query}, &out)
+	require.False(t, cres.IsError)
+	require.NotEmpty(t, out.Context)
+
+	// No document appears twice, and every block carries its full chunk content.
+	seen := make(map[string]bool)
+	for _, b := range out.Context {
+		uri, _, ok := strings.Cut(b.Source, ":")
+		require.True(t, ok, "source %q must be uri:lines", b.Source)
+		require.False(t, seen[uri], "document %q appears in more than one grouped block", uri)
+		seen[uri] = true
+		require.NotEmpty(t, b.Content)
 	}
 }
 
