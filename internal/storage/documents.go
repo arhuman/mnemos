@@ -157,7 +157,15 @@ type ListFilter struct {
 	Collection string // exact collection match
 	PathPrefix string // documents.uri starts with this slash-relative prefix
 	FileType   string // file extension without the dot (e.g. "md")
-	Limit      int
+	// DocType filters on the OKF document type in frontmatter (json_extract
+	// $.type), case-insensitive. Applied in SQL so callers do not scan every row
+	// and JSON-decode it in Go. Documents with absent or malformed frontmatter
+	// never match.
+	DocType string
+	// Status filters on the OKF status field in frontmatter (json_extract
+	// $.status), case-insensitive, with the same SQL/JSON semantics as DocType.
+	Status string
+	Limit  int
 }
 
 // ListDocuments returns document metadata rows ordered by uri, narrowed by the
@@ -180,6 +188,17 @@ func ListDocuments(ctx context.Context, db *sql.DB, f ListFilter) ([]DocumentRow
 	if f.FileType != "" {
 		where = append(where, "uri LIKE ? ESCAPE '\\'")
 		args = append(args, "%."+EscapeLike(f.FileType))
+	}
+	// The CASE guards json_extract against rows whose frontmatter_json is empty or
+	// malformed (json_extract on invalid JSON raises an error): it yields NULL for
+	// those, and NULL never equals the bound value, so they are excluded.
+	if f.DocType != "" {
+		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.type')) END) = lower(?)")
+		args = append(args, f.DocType)
+	}
+	if f.Status != "" {
+		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.status')) END) = lower(?)")
+		args = append(args, f.Status)
 	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -251,6 +270,17 @@ func ListDocumentDigests(ctx context.Context, db *sql.DB, f ListFilter) ([]Docum
 	if f.FileType != "" {
 		where = append(where, "uri LIKE ? ESCAPE '\\'")
 		args = append(args, "%."+EscapeLike(f.FileType))
+	}
+	// The CASE guards json_extract against rows whose frontmatter_json is empty or
+	// malformed (json_extract on invalid JSON raises an error): it yields NULL for
+	// those, and NULL never equals the bound value, so they are excluded.
+	if f.DocType != "" {
+		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.type')) END) = lower(?)")
+		args = append(args, f.DocType)
+	}
+	if f.Status != "" {
+		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.status')) END) = lower(?)")
+		args = append(args, f.Status)
 	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")

@@ -42,6 +42,25 @@ func TestTaskListGroupsByStatus(t *testing.T) {
 		"in_progress group precedes todo group")
 }
 
+func TestTaskListTitleFromFrontmatterAndCollection(t *testing.T) {
+	chdir(t, t.TempDir())
+	runCmd(t, "init")
+	// The heading ("Placeholder") differs from the frontmatter title so the two
+	// sources are distinguishable in the output.
+	seedKB(t, "task.md", "---\ntype: Task\nstatus: todo\ntitle: Real Title\n---\n# Placeholder\n\nbody\n")
+	// A document with no frontmatter at all: the json_extract type filter must
+	// exclude it without erroring on the empty frontmatter_json.
+	seedKB(t, "plain.md", "just a plain note, no frontmatter\n")
+	runCmd(t, "ingest", ".", "--collection", "demo")
+
+	out := runCmd(t, "task", "list")
+
+	require.Contains(t, out, "Real Title", "title comes from frontmatter")
+	require.NotContains(t, out, "Placeholder", "heading is not used when frontmatter has a title")
+	require.Contains(t, out, "demo", "collection is shown per task")
+	require.NotContains(t, out, "plain.md", "non-task without frontmatter is excluded and does not error")
+}
+
 func TestTaskListStatusFilter(t *testing.T) {
 	chdir(t, t.TempDir())
 	seedTasks(t)

@@ -46,15 +46,18 @@ func TestGroupTasksEmpty(t *testing.T) {
 }
 
 func TestTaskMeta(t *testing.T) {
-	dt, st := taskMeta(`{"type":"Task","status":"todo"}`)
+	dt, st, ti := taskMeta(`{"type":"Task","status":"todo","title":"First"}`)
 	require.Equal(t, "Task", dt)
 	require.Equal(t, "todo", st)
+	require.Equal(t, "First", ti)
 
-	dt, st = taskMeta(`{"type":"idea"}`)
+	dt, st, ti = taskMeta(`{"type":"idea"}`)
 	require.Equal(t, "idea", dt)
 	require.Equal(t, "", st)
+	require.Equal(t, "", ti)
 
-	dt, st = taskMeta("")
+	dt, st, ti = taskMeta("")
 	require.Equal(t, "", dt)
 	require.Equal(t, "", st)
+	require.Equal(t, "", ti)
 }
