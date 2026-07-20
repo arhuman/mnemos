@@ -125,6 +125,15 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - `ingest <path>` confines its scan root to the kb, like `okfy`; an out-of-tree
   path is refused with guidance.
 
+### Fixed
+- `mnemos.remember` to an explicit path now preserves a body's existing frontmatter
+  instead of prepending a second block. Read-modify-write of a stateful document (a
+  task state file, `status.md`, a decision) is lossless: the author's
+  `status`/`priority`/`title` are no longer shadowed by a generated block that carried
+  only `type`/`tags`/`timestamp`/`collection`, so a remembered `type: task` document
+  groups correctly in `mnemos task list`. Inbox captures (no path) still generate
+  frontmatter as before. New `ingest.PrepareOKF` seam; `RenderOKF` unchanged.
+
 ### Removed
 - Config keys `[storage].path` and `[capture].dir`, and the layered
   `~/.mnemos.toml` + `./.mnemos.toml` discovery — superseded by the single

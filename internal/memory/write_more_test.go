@@ -2,7 +2,9 @@ package memory_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,6 +13,7 @@ import (
 	"github.com/arhuman/mnemos/internal/config"
 	"github.com/arhuman/mnemos/internal/memory"
 	"github.com/arhuman/mnemos/internal/search"
+	"github.com/arhuman/mnemos/internal/storage"
 	"github.com/arhuman/mnemos/internal/testutil"
 )
 
@@ -67,6 +70,41 @@ func TestRememberToPath(t *testing.T) {
 	// Traversal outside the tree is rejected by the confinement guard.
 	_, err = f.svc.Remember(ctx, memory.RememberInput{Type: "idea", Text: "x", Path: "../escape.md"})
 	require.ErrorContains(t, err, "remember path")
+}
+
+// TestRememberAuthoredTaskPreservesFrontmatter proves the frontmatter-merge fix
+// end to end: remembering a complete task document to an explicit path writes it
+// verbatim (a single frontmatter block, no generated one shadowing status/title)
+// and indexes it, so `mnemos task list` can group it by its own frontmatter.
+func TestRememberAuthoredTaskPreservesFrontmatter(t *testing.T) {
+	f := newFixture(t, true, false)
+	ctx := context.Background()
+
+	authored := "---\n" +
+		"type: task\n" +
+		"title: Ship the thing\n" +
+		"status: todo\n" +
+		"priority: high\n" +
+		"---\n\n## Goal\nship it\n"
+
+	res, err := f.svc.Remember(ctx, memory.RememberInput{
+		Type: "task", Text: authored, Path: "tasks/ship.md", Collection: "proj",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "tasks/ship.md", res.URI)
+	require.Positive(t, res.Chunks, "authored task parsed and indexed")
+
+	// Byte-for-byte on disk: no second frontmatter block was prepended.
+	onDisk, err := os.ReadFile(filepath.Join(f.treeRoot, "tasks", "ship.md"))
+	require.NoError(t, err)
+	require.Equal(t, authored, string(onDisk))
+	require.Equal(t, 2, strings.Count(string(onDisk), "---"), "exactly one frontmatter block")
+
+	// Indexed under its collection and reachable by uri.
+	doc, err := storage.GetDocumentByURI(ctx, f.db, "tasks/ship.md")
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+	require.Equal(t, "proj", doc.Collection)
 }
 
 // TestRememberDeferred covers the defer_to_watcher write-only branch: the file
