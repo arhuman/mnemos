@@ -96,13 +96,18 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 		collection = "default"
 	}
 
-	filename, content := ingest.RenderOKF(ingest.CaptureInput{
+	// PrepareOKF preserves an authored document verbatim when the caller targets a
+	// path and the body already carries frontmatter (read-modify-write of a task
+	// state file, status.md, or a decision); otherwise it wraps the body in a
+	// generated frontmatter block. This stops a second block from shadowing the
+	// author's status/priority/title fields.
+	filename, content := ingest.PrepareOKF(ingest.CaptureInput{
 		Type:       noteType,
 		Body:       in.Text,
 		Tags:       in.Tags,
 		Collection: collection,
 		Timestamp:  time.Now(),
-	})
+	}, strings.TrimSpace(in.Path) != "")
 
 	// outExisted tells the log whether this write created or updated a concept.
 	absPath, uri, outExisted, err := s.writeNoteFile(in, filename, content)
@@ -112,9 +117,10 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 
 	// Record the change in the note's directory log.md. The concept is already
 	// written, so a log-append failure is surfaced (wrapped) without losing it;
-	// reserved files never get their own log entry. The capture path always
-	// stamps the frontmatter timestamp to now (RenderOKF above), so timestamp
-	// reliably means "last modified" for both create and update.
+	// reserved files never get their own log entry. log.md is stamped with
+	// time.Now() below, so it records "last modified" for both create and update
+	// regardless of whether the frontmatter was generated (inbox capture) or
+	// authored (an explicit-path document preserved verbatim by PrepareOKF).
 	if base := filepath.Base(absPath); !okf.IsReservedOKFFile(base) {
 		kind := okf.LogCreation
 		if outExisted {

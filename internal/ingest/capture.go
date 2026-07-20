@@ -14,6 +14,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 
 	"github.com/arhuman/mnemos/internal/chunk"
+	"github.com/arhuman/mnemos/internal/parse"
 )
 
 // CaptureInput is the content an agent hands to mnemos.remember, normalized for
@@ -28,6 +29,37 @@ type CaptureInput struct {
 	// Timestamp is the capture time. The program may use time.Now(); only the
 	// eval/workflow scripts are forbidden wall-clock access, not the server.
 	Timestamp time.Time
+}
+
+// PrepareOKF turns a capture into the bytes to write, choosing between preserving
+// an authored document and generating a frontmatter wrapper.
+//
+// When the caller targets an explicit path (hasPath) AND the body already opens
+// with a frontmatter block, the body is preserved verbatim (only a trailing
+// newline is ensured). This is the read-modify-write case for a stateful document
+// — a task state file, status.md, a decision — where the caller's frontmatter
+// (status, priority, title, …) is authoritative. Wrapping it in a second block
+// would shadow those fields behind a generated one that carries only
+// type/tags/timestamp/collection, which is why a remembered task never grouped in
+// `mnemos task list`.
+//
+// Otherwise (an inbox capture with no path, or a path target whose body carries
+// no frontmatter yet) the body is wrapped by RenderOKF. Gating passthrough on
+// hasPath keeps raw inbox notes that merely begin with a `---` thematic break from
+// being mistaken for frontmatter. The returned filename is empty in the
+// passthrough case: it is only consumed for auto-naming, which never happens when
+// a path is targeted.
+func PrepareOKF(in CaptureInput, hasPath bool) (filename string, content []byte) {
+	if hasPath && parse.HasFrontmatter([]byte(in.Body)) {
+		body := in.Body
+		if !strings.HasSuffix(body, "\n") {
+			body += "\n"
+		}
+
+		return "", []byte(body)
+	}
+
+	return RenderOKF(in)
 }
 
 // RenderOKF serializes a capture into an OKF markdown document: a YAML
