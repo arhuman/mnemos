@@ -45,6 +45,15 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - CLI: `init`, `ingest`, `search`, `ls`, `eval`, `watch`, `serve`, `status`,
   `version`, `models install`, `reindex`, `validate`, `task list`, `forget`,
   `mv`, `okfy`.
+- `reindex --content` re-parses and rewrites every already-indexed document from
+  its on-disk file, bypassing the unchanged-file content-hash skip, so a parser or
+  schema change (e.g. the frontmatter-title fix) propagates to the whole index
+  without editing files. It walks the documents table, preserving each document's
+  stored collection, and leaves rows whose file has vanished in place. Rewriting
+  chunks cascades away their embeddings, so it advises a follow-up
+  `reindex --embeddings`; `--content` and `--embeddings` may be combined (content
+  runs first). Normal ingest/watch stay hash-skip-fast (the new `ingest.Options.Force`
+  defaults off).
 - Incremental file watcher with debounce/coalescing that reindexes changed files
   and removes deleted ones.
 - Retrieval-quality evaluation (`mnemos eval`) over OKF bundles: auto-derived

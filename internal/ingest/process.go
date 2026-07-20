@@ -79,14 +79,18 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 
 	hash := hashContent(content)
 
-	existing, ok, err := storage.DocumentHashByURI(ctx, p.db, f.uri)
-	if err != nil {
-		return result{}, fmt.Errorf("ingest: hash lookup %q: %w", f.uri, err)
-	}
-	if ok && existing == hash {
-		p.logger.Debug("ingest skip unchanged", "uri", f.uri)
+	// Force re-parses even an unchanged file, so skip the hash short-circuit; the
+	// oversize/binary/unparseable skips above still guard the read and parse.
+	if !opts.Force {
+		existing, ok, lookupErr := storage.DocumentHashByURI(ctx, p.db, f.uri)
+		if lookupErr != nil {
+			return result{}, fmt.Errorf("ingest: hash lookup %q: %w", f.uri, lookupErr)
+		}
+		if ok && existing == hash {
+			p.logger.Debug("ingest skip unchanged", "uri", f.uri)
 
-		return result{skip: true}, nil
+			return result{skip: true}, nil
+		}
 	}
 
 	modTime := info.ModTime().UTC().Format(time.RFC3339)
