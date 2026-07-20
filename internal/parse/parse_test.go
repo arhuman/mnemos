@@ -30,6 +30,52 @@ func TestMarkdownFrontmatterMapping(t *testing.T) {
 	require.NotEmpty(t, doc.FrontmatterJSON)
 }
 
+func TestMarkdownTitlePrecedence(t *testing.T) {
+	cases := []struct {
+		name    string
+		uri     string
+		content string
+		want    string
+	}{
+		{
+			name:    "frontmatter title wins over heading",
+			uri:     "docs/x.md",
+			content: "---\ntitle: Real Title\n---\n\n## Goal\n\nbody\n",
+			want:    "Real Title",
+		},
+		{
+			name:    "heading used when no frontmatter title",
+			uri:     "docs/x.md",
+			content: "---\ntype: task\n---\n\n## Goal\n\nbody\n",
+			want:    "Goal",
+		},
+		{
+			name:    "body line used when neither title nor heading",
+			uri:     "docs/x.md",
+			content: "just a plain line\nmore\n",
+			want:    "just a plain line",
+		},
+		{
+			name:    "blank frontmatter title falls back to heading",
+			uri:     "docs/x.md",
+			content: "---\ntitle: \"   \"\n---\n\n## Goal\n\nbody\n",
+			want:    "Goal",
+		},
+		{
+			name:    "index.md honours frontmatter title",
+			uri:     "docs/index.md",
+			content: "---\ntitle: Bundle Title\n---\n\n# Heading\n",
+			want:    "Bundle Title",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := parseMarkdown(t, tc.uri, tc.content)
+			require.Equal(t, tc.want, doc.Title)
+		})
+	}
+}
+
 func TestMarkdownLineRangesAreFileAbsolute(t *testing.T) {
 	// 6 frontmatter lines + blank line 7; "# H" is file line 8.
 	content := "---\ntype: note\ntags: [a]\nresource: r\ntimestamp: t\n---\n\n# H\n\nbody\n"

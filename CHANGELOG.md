@@ -14,7 +14,12 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Single cgo-free Go binary bundling an MCP server, indexing pipeline, SQLite
   store, full-text search, an incremental file watcher, and an admin CLI.
 - Indexing pipeline: directory scanning, content-hash change detection, and
-  chunking for text, Markdown, and Go source, with token-aware splitting.
+  chunking for text, Markdown, and Go source, with token-aware splitting. A
+  Markdown document's stored `documents.title` honors an explicit frontmatter
+  `title:` (falling back to the first heading, then the first non-empty body
+  line), so an OKF document is no longer mislabelled by its first `##` heading
+  in `search`/`context`/`list`. Existing documents pick up the corrected title
+  on their next re-ingest (unchanged files are content-hash-skipped).
 - Lexical retrieval over SQLite FTS5 with bm25 ranking; frontmatter `tags`/`type`
   contribute fuzzy ranking signals. Citations report `uri#section` and line ranges.
   Search over-fetches a candidate pool before applying the heading-path boost, so

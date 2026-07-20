@@ -17,6 +17,7 @@ type frontmatterResult struct {
 	rawJSON    string
 	tags       []string
 	docType    string
+	title      string
 	modifiedAt string
 	// lineOffset is the number of source lines the frontmatter block consumed
 	// (including delimiters and the trailing blank line). Body line N maps to
@@ -38,9 +39,10 @@ func HasFrontmatter(content []byte) bool {
 
 // extractFrontmatter splits YAML frontmatter from content, returning the
 // remaining body when no frontmatter is present (body == content). Well-known
-// keys are mapped: `tags` (list), `type`→doc_type, `timestamp`→modified_at
-// fallback, `resource`→chunk metadata. The full matter is re-encoded as JSON
-// for documents.frontmatter_json.
+// keys are mapped: `tags` (list), `type`→doc_type, `title`→document title (takes
+// precedence over a heading-derived title), `timestamp`→modified_at fallback,
+// `resource`→chunk metadata. The full matter is re-encoded as JSON for
+// documents.frontmatter_json.
 func extractFrontmatter(content []byte) (frontmatterResult, error) {
 	var matter map[string]any
 	rest, err := frontmatter.Parse(bytes.NewReader(content), &matter)
@@ -58,6 +60,7 @@ func extractFrontmatter(content []byte) (frontmatterResult, error) {
 	}
 	res.tags = stringList(matter["tags"])
 	res.docType = asString(matter["type"])
+	res.title = strings.TrimSpace(asString(matter["title"]))
 	res.modifiedAt = asString(matter["timestamp"])
 	if r, ok := matter["resource"]; ok {
 		res.metadata = map[string]any{"resource": r}

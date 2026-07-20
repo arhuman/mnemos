@@ -44,7 +44,7 @@ func (MarkdownParser) Parse(_ context.Context, src model.Source) (model.ParsedDo
 	// OKF index.md: structure only — a documents row, no chunks/links/FTS.
 	if strings.EqualFold(filepath.Base(src.URI), "index.md") {
 		doc.StructureOnly = true
-		doc.Title = titleFromBody(fm.body)
+		doc.Title = cmp.Or(fm.title, titleFromBody(fm.body))
 
 		return doc, nil
 	}
@@ -55,10 +55,10 @@ func (MarkdownParser) Parse(_ context.Context, src model.Source) (model.ParsedDo
 
 	doc.Sections = offsetSections(buildSections(root, body, idx), fm.lineOffset)
 	doc.Links = extractLinks(root, body, src.URI)
-	doc.Title = firstHeadingText(root, body)
-	if doc.Title == "" {
-		doc.Title = titleFromBody(body)
-	}
+	// An explicit frontmatter `title` wins; otherwise fall back to the first
+	// heading, then any non-empty body line. This keeps OKF documents (whose title
+	// lives in frontmatter) from being mislabelled by their first `##` heading.
+	doc.Title = cmp.Or(fm.title, firstHeadingText(root, body), titleFromBody(body))
 
 	return doc, nil
 }
