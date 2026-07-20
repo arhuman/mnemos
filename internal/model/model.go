@@ -120,14 +120,19 @@ type Link struct {
 }
 
 // Result is one ranked retrieval hit: the chunk that matched, its owning
-// document's uri/collection, the heading path and 1-based line range for
+// document's uri/collection/title, the heading path and 1-based line range for
 // citation, a highlighted snippet, and the final relevance score (higher is
 // better). It is the value a Retriever returns and the CLI/MCP layers render.
+// Title and ModifiedAt come from the owning documents row so callers need not
+// re-fetch the document to label or group a hit; both may be empty when the
+// document stored no title / no modified_at.
 type Result struct {
 	ID          string  `json:"id"`
 	DocumentID  string  `json:"document_id"`
 	URI         string  `json:"uri"`
 	Collection  string  `json:"collection"`
+	Title       string  `json:"title,omitempty"`
+	ModifiedAt  string  `json:"modified_at,omitempty"`
 	HeadingPath string  `json:"heading_path"`
 	StartLine   int     `json:"start_line"`
 	EndLine     int     `json:"end_line"`

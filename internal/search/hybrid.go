@@ -162,6 +162,7 @@ func (v *VectorRetriever) hydrate(ctx context.Context, scored []idScore) ([]mode
 	}
 
 	query := `SELECT c.id, c.document_id, d.uri, d.collection, ` +
+		`COALESCE(d.title, ''), COALESCE(d.modified_at, ''), ` +
 		`COALESCE(c.heading_path, ''), c.start_line, c.end_line, c.content ` +
 		`FROM chunks c JOIN documents d ON d.id = c.document_id ` +
 		`WHERE c.id IN (` + strings.Join(placeholders, ",") + `)`
@@ -177,13 +178,16 @@ func (v *VectorRetriever) hydrate(ctx context.Context, scored []idScore) ([]mode
 		var r model.Result
 		var content string
 		if err := rows.Scan(
-			&r.ID, &r.DocumentID, &r.URI, &r.Collection,
+			&r.ID, &r.DocumentID, &r.URI, &r.Collection, &r.Title, &r.ModifiedAt,
 			&r.HeadingPath, &r.StartLine, &r.EndLine, &content,
 		); err != nil {
 			return nil, fmt.Errorf("search: scan hydrated row: %w", err)
 		}
 		r.Score = scoreByID[r.ID]
 		r.Snippet = snippet(content)
+		if r.Snippet == "" {
+			r.Snippet = r.HeadingPath
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {

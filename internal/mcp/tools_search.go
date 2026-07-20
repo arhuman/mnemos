@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"math"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -61,6 +62,10 @@ func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in
 		return nil, nil, err
 	}
 
+	// Trim the low-relevance tail so the agent is not fed filler hits just to
+	// reach the limit.
+	results = search.RelevanceCliff(results)
+
 	out := searchOutput{Results: make([]searchResult, 0, len(results))}
 	for _, r := range results {
 		out.Results = append(out.Results, toSearchResult(r))
@@ -69,9 +74,9 @@ func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in
 	return s.result(out)
 }
 
-// toSearchResult maps an internal Result to the MCP output shape, deriving a
-// Title from the last heading-path segment (the document title is not carried on
-// Result, so the heading is the best available label).
+// toSearchResult maps an internal Result to the MCP output shape, preferring the
+// document's stored title and rounding the score to one decimal at the JSON
+// boundary (bm25 + boost carries meaningless extra precision).
 func toSearchResult(r model.Result) searchResult {
 	return searchResult{
 		Title:       resultTitle(r),
@@ -80,16 +85,26 @@ func toSearchResult(r model.Result) searchResult {
 		StartLine:   r.StartLine,
 		EndLine:     r.EndLine,
 		Snippet:     r.Snippet,
-		Score:       r.Score,
+		Score:       roundScore(r.Score),
 	}
 }
 
-// resultTitle returns the last segment of the heading path, falling back to the
-// uri when the chunk has no heading.
+// resultTitle returns the document's stored title, falling back to the last
+// heading-path segment, then the uri, so a hit always carries a human label.
 func resultTitle(r model.Result) string {
+	if r.Title != "" {
+		return r.Title
+	}
 	if h := model.LastHeading(r.HeadingPath); h != "" {
 		return h
 	}
 
 	return r.URI
+}
+
+// roundScore rounds a relevance score to one decimal place. Search ranks on
+// bm25 plus a small heading boost; the trailing precision is noise that only
+// inflates the response, so it is trimmed at the wire boundary.
+func roundScore(score float64) float64 {
+	return math.Round(score*10) / 10
 }

@@ -128,6 +128,7 @@ func filterClause(q Query) (conds []string, args []any) {
 func searchSQL(filterConds []string) string {
 	var b strings.Builder
 	_, _ = b.WriteString(`SELECT c.id, c.document_id, d.uri, d.collection, ` +
+		`COALESCE(d.title, ''), COALESCE(d.modified_at, ''), ` +
 		`COALESCE(c.heading_path, ''), c.start_line, c.end_line, ` +
 		`snippet(chunks_fts, 0, '[', ']', ' … ', 12) AS snip, ` +
 		`bm25(chunks_fts, `)

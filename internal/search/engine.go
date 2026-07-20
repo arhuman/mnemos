@@ -78,10 +78,17 @@ func (e *Engine) Search(ctx context.Context, q Query) ([]model.Result, error) {
 		var r model.Result
 		var rank float64
 		if err := rows.Scan(
-			&r.ID, &r.DocumentID, &r.URI, &r.Collection,
+			&r.ID, &r.DocumentID, &r.URI, &r.Collection, &r.Title, &r.ModifiedAt,
 			&r.HeadingPath, &r.StartLine, &r.EndLine, &r.Snippet, &rank,
 		); err != nil {
 			return nil, fmt.Errorf("search: scan row: %w", err)
+		}
+		// snippet() covers column 0 (content) only, so a chunk that matched on its
+		// heading, tags, or doc_type — but whose content column is empty — yields an
+		// empty snippet. Fall back to the heading path so the hit still carries the
+		// signal that ranked it rather than a blank line.
+		if r.Snippet == "" {
+			r.Snippet = r.HeadingPath
 		}
 		// SQLite bm25() is negative with more-negative = better; flip it so the
 		// displayed score is positive and higher = better.

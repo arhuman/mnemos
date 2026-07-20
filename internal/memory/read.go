@@ -21,13 +21,31 @@ type Citation struct {
 
 // ReadResult is the outcome of reading a document or a single chunk. Content is
 // the chunk text or the reconstructed document body; the metadata fields locate
-// it. Citation is set only for a chunk read.
+// it. Citation is set only for a chunk read. Truncated reports that a size budget
+// clipped Content, signalling the caller to read deeper if it needs the rest.
 type ReadResult struct {
 	URI        string
 	Collection string
 	Title      string
 	Content    string
+	Truncated  bool
 	Citation   *Citation
+}
+
+// ReadOptions narrows and bounds a read. Section and Lines scope a document read
+// to a subset of its chunks (both empty reads the whole document); they are
+// ignored for a single-chunk read, which is already a fragment. MaxChars and
+// MaxTokens cap the returned Content (see charBudget); the zero value of every
+// field reproduces the unbounded whole-document/whole-chunk read.
+type ReadOptions struct {
+	// Section keeps only chunks whose heading path contains this text
+	// (case-insensitive), e.g. "Definition of done".
+	Section string
+	// Lines keeps only chunks overlapping this 1-based inclusive source-line span,
+	// written "start-end" or a bare "start".
+	Lines     string
+	MaxChars  int
+	MaxTokens int
 }
 
 // ReadChunk returns a single chunk's content and its citation. An unknown
@@ -65,16 +83,31 @@ func (s *Service) ReadChunk(ctx context.Context, chunkID string) (ReadResult, er
 	}, nil
 }
 
-// ReadDocument reconstructs a document from its stored chunks ordered by
-// ordinal, de-duplicating the overlapping line ranges the windowed chunker
-// emits. An unknown uri is a not-found error.
+// ReadDocument reconstructs a whole document from its stored chunks. It is the
+// unbounded, unscoped read; ReadDocumentOpts adds section/line scoping.
 func (s *Service) ReadDocument(ctx context.Context, uri string) (ReadResult, error) {
+	return s.ReadDocumentOpts(ctx, uri, ReadOptions{})
+}
+
+// ReadDocumentOpts reconstructs a document from its stored chunks ordered by
+// ordinal, de-duplicating the overlapping line ranges the windowed chunker emits.
+// When opts.Section or opts.Lines is set it first narrows to the matching chunks,
+// so a caller can pull one heading or line span instead of the whole document. An
+// unknown uri is a not-found error; a scope that matches no chunk is an error too,
+// so an empty read is never silently returned. Size budgets are applied by the
+// ReadOneOpts caller, uniformly with chunk reads.
+func (s *Service) ReadDocumentOpts(ctx context.Context, uri string, opts ReadOptions) (ReadResult, error) {
 	chunks, err := storage.GetChunksByDocURI(ctx, s.db, uri)
 	if err != nil {
 		return ReadResult{}, fmt.Errorf("memory: read document: %w", err)
 	}
 	if len(chunks) == 0 {
 		return ReadResult{}, fmt.Errorf("unknown uri %q", uri)
+	}
+
+	chunks, err = scopeChunks(chunks, opts, uri)
+	if err != nil {
+		return ReadResult{}, err
 	}
 
 	doc, err := storage.GetDocumentByURI(ctx, s.db, uri)
@@ -95,6 +128,40 @@ func (s *Service) ReadDocument(ctx context.Context, uri string) (ReadResult, err
 	}, nil
 }
 
+// scopeChunks narrows chunks to those matching opts.Section and/or opts.Lines,
+// preserving order. Both empty returns chunks unchanged. A scope that matches no
+// chunk is an error (naming uri) rather than an empty document.
+func scopeChunks(chunks []model.Chunk, opts ReadOptions, uri string) ([]model.Chunk, error) {
+	if opts.Section == "" && opts.Lines == "" {
+		return chunks, nil
+	}
+	var lr lineRange
+	if opts.Lines != "" {
+		var err error
+		if lr, err = parseLineRange(opts.Lines); err != nil {
+			return nil, fmt.Errorf("memory: read %q: %w", uri, err)
+		}
+	}
+	section := strings.ToLower(opts.Section)
+
+	out := make([]model.Chunk, 0, len(chunks))
+	for _, c := range chunks {
+		if section != "" && !strings.Contains(strings.ToLower(c.HeadingPath), section) {
+			continue
+		}
+		// Skip chunks whose [StartLine, EndLine] does not intersect the request.
+		if opts.Lines != "" && (c.StartLine > lr.End || c.EndLine < lr.Start) {
+			continue
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no chunk in %q matches the requested section/lines", uri)
+	}
+
+	return out, nil
+}
+
 // ErrAmbiguousRead and ErrEmptyRead document the two invalid read selectors a
 // surface may pass; surfaces validate their own input shape, but ReadOne lets a
 // surface delegate the choice too.
@@ -103,22 +170,42 @@ var (
 	ErrEmptyRead     = errors.New("provide exactly one of uri or chunk_id")
 )
 
-// ReadOne dispatches to ReadDocument or ReadChunk based on which of uri/chunkID
-// is set, rejecting the both-set and neither-set cases. It is the single entry
-// the MCP read tool delegates to.
+// ReadOne dispatches an unbounded read of a document or chunk. It is
+// ReadOneOpts with the zero ReadOptions.
 func (s *Service) ReadOne(ctx context.Context, uri, chunkID string) (ReadResult, error) {
+	return s.ReadOneOpts(ctx, uri, chunkID, ReadOptions{})
+}
+
+// ReadOneOpts dispatches to ReadDocumentOpts or ReadChunk based on which of
+// uri/chunkID is set, rejecting the both-set and neither-set cases, then applies
+// the size budget to the returned content uniformly (section/line scoping applies
+// to document reads only; a chunk is already a fragment). It is the single entry
+// the MCP read tool delegates to.
+func (s *Service) ReadOneOpts(ctx context.Context, uri, chunkID string, opts ReadOptions) (ReadResult, error) {
 	hasURI := uri != ""
 	hasChunk := chunkID != ""
+
+	var (
+		res ReadResult
+		err error
+	)
 	switch {
 	case hasURI && hasChunk:
 		return ReadResult{}, ErrAmbiguousRead
 	case !hasURI && !hasChunk:
 		return ReadResult{}, ErrEmptyRead
 	case hasChunk:
-		return s.ReadChunk(ctx, chunkID)
+		res, err = s.ReadChunk(ctx, chunkID)
 	default:
-		return s.ReadDocument(ctx, uri)
+		res, err = s.ReadDocumentOpts(ctx, uri, opts)
 	}
+	if err != nil {
+		return ReadResult{}, err
+	}
+
+	res.Content, res.Truncated = truncateContent(res.Content, charBudget(opts.MaxChars, opts.MaxTokens))
+
+	return res, nil
 }
 
 // reconstruct stitches ordinal-ordered chunks back into the source body while
