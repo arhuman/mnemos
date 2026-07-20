@@ -50,6 +50,12 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
 - Retrieval-quality evaluation (`mnemos eval`) over OKF bundles: auto-derived
   held-out query→source pairs reporting Hit@1 / Recall@12 / MRR@12 against a
   committed baseline.
+- Collection visibility boundary: `[security].visibility.deny` lists collections
+  hidden from every query surface (`search`, `context`, `list`, `task`), enforced
+  server-side in the query layer — a denied collection never surfaces even when a
+  caller names it explicitly. Empty by default (nothing hidden), so a single-store
+  KB stays fully visible until configured. `search` results and `context` blocks
+  now also carry their `collection` as a provenance label. See plan §5.2.
 - Security: stdio-only MCP server, read-only by default, path-confinement guard
   (rejects `..` traversal, symlink escapes, `.mnemos/` access, and configured
   exclusion globs), and secret-scanning of captured content before write/index.

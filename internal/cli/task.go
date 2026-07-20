@@ -69,9 +69,10 @@ func runTaskList(cmd *cobra.Command, state *rootState, collection, status string
 		// the Task documents to render rather than every document for a Go-side
 		// scan and per-row JSON decode.
 		docs, err := storage.ListDocuments(cmd.Context(), a.DB, storage.ListFilter{
-			Collection: collection,
-			DocType:    "task",
-			Status:     status,
+			Collection:         collection,
+			DocType:            "task",
+			Status:             status,
+			ExcludeCollections: a.Config.HiddenCollections(),
 		})
 		if err != nil {
 			return err

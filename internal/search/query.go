@@ -23,6 +23,12 @@ type Query struct {
 	// ModifiedSince, when set, restricts results to documents.modified_at >= it.
 	// It is compared lexically, so an RFC3339 timestamp sorts correctly.
 	ModifiedSince string
+	// ExcludeCollections, when non-empty, drops every result whose
+	// documents.collection is in the list. It is the server-side visibility
+	// boundary ([security].visibility.deny): the memory service sets it from config
+	// on every query so a hidden collection can never surface, independent of the
+	// caller-supplied Collection filter.
+	ExcludeCollections []string
 	// Limit caps the result count. The caller supplies the configured default
 	// when it is not overridden on the command line.
 	Limit int

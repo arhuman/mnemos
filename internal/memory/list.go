@@ -26,9 +26,34 @@ func (s *Service) List(ctx context.Context, opts browse.Options) ([]browse.Entry
 	if err != nil {
 		return nil, fmt.Errorf("memory: list: %w", err)
 	}
-	if entries == nil {
-		entries = []browse.Entry{}
+
+	return hideCollections(entries, s.cfg.HiddenCollections()), nil
+}
+
+// hideCollections drops entries whose collection is in the deny list — the
+// server-side visibility boundary applied to list/ls, matching the query-layer
+// exclusion the search path applies. An un-indexed file has no collection
+// attribution, so it is never dropped here (there is nothing hidden to leak). A
+// nil result is normalized to an empty slice.
+func hideCollections(entries []browse.Entry, deny []string) []browse.Entry {
+	if len(deny) == 0 {
+		if entries == nil {
+			return []browse.Entry{}
+		}
+
+		return entries
+	}
+	hidden := make(map[string]bool, len(deny))
+	for _, c := range deny {
+		hidden[c] = true
+	}
+	out := make([]browse.Entry, 0, len(entries))
+	for _, e := range entries {
+		if e.Collection != "" && hidden[e.Collection] {
+			continue
+		}
+		out = append(out, e)
 	}
 
-	return entries, nil
+	return out
 }

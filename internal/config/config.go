@@ -77,10 +77,21 @@ type CaptureConfig struct {
 	DeferToWatcher bool `koanf:"defer_to_watcher"`
 }
 
-// SecurityConfig configures secret exclusion during ingestion.
+// SecurityConfig configures secret exclusion during ingestion and cross-scope
+// query visibility.
 type SecurityConfig struct {
-	ExcludeSecrets bool     `koanf:"exclude_secrets"`
-	Exclude        []string `koanf:"exclude"`
+	ExcludeSecrets bool             `koanf:"exclude_secrets"`
+	Exclude        []string         `koanf:"exclude"`
+	Visibility     VisibilityConfig `koanf:"visibility"`
+}
+
+// VisibilityConfig lists collections hidden from every query surface. The deny
+// list is enforced server-side in the query layer (search, context, list, task),
+// not merely at display, so a hidden collection can never surface — even if a
+// caller names it explicitly. Empty by default: nothing is hidden until
+// configured, keeping a single-store KB fully visible out of the box.
+type VisibilityConfig struct {
+	Deny []string `koanf:"deny"`
 }
 
 // defaultTOML holds the built-in configuration, identical to the file written by
@@ -121,6 +132,13 @@ exclude = [
   "**/id_rsa",
   "**/secrets/**",
 ]
+
+[security.visibility]
+# Collections hidden from every query surface (search, context, list, task),
+# enforced server-side. Empty by default, so all collections are visible. A hidden
+# collection never surfaces even if a caller names it. Example:
+#   deny = ["perso", "epfl"]
+deny = []
 `
 
 // DefaultTOML returns the canonical default configuration document. `init` uses
@@ -136,6 +154,14 @@ func DefaultTOML() []byte {
 // regardless of whether secrets are also being kept out of the index.
 func (c *Config) ConfinementExclude() []string {
 	return c.Security.Exclude
+}
+
+// HiddenCollections returns the collections hidden from every query surface (the
+// [security].visibility.deny list). Empty by default. The query layer excludes
+// these collections server-side so hidden content never surfaces in
+// search/context/list/task regardless of caller-supplied filters.
+func (c *Config) HiddenCollections() []string {
+	return c.Security.Visibility.Deny
 }
 
 // SecurityExclude returns the indexing-time secret-exclusion globs, gated by

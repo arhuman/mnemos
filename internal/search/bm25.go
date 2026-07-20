@@ -115,8 +115,20 @@ func filterClause(q Query) (conds []string, args []any) {
 		conds = append(conds, "d.modified_at >= ?")
 		args = append(args, q.ModifiedSince)
 	}
+	if len(q.ExcludeCollections) > 0 {
+		conds = append(conds, "d.collection NOT IN ("+placeholders(len(q.ExcludeCollections))+")")
+		for _, c := range q.ExcludeCollections {
+			args = append(args, c)
+		}
+	}
 
 	return conds, args
+}
+
+// placeholders returns "?, ?, …" with n placeholders for an IN/NOT IN clause.
+// n is always >= 1 at the call site.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?, ", n), ", ")
 }
 
 // searchSQL assembles the FTS5 retrieval statement. It joins the FTS virtual

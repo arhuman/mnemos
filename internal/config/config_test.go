@@ -35,6 +35,23 @@ func TestDefaultTOMLParsesToDefaults(t *testing.T) {
 	require.Contains(t, cfg.Indexing.Include, "**/*.md")
 }
 
+func TestHiddenCollectionsDefaultsEmpty(t *testing.T) {
+	cfg, err := config.Load("", missing)
+	require.NoError(t, err)
+	require.Empty(t, cfg.HiddenCollections(), "no collection is hidden by default")
+}
+
+func TestHiddenCollectionsFromVisibilityDeny(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "mnemos.toml", `
+[security.visibility]
+deny = ["perso", "epfl"]
+`)
+	cfg, err := config.Load(path, exists)
+	require.NoError(t, err)
+	require.Equal(t, []string{"perso", "epfl"}, cfg.HiddenCollections())
+}
+
 func TestLoadOverlaysFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "mnemos.toml", `

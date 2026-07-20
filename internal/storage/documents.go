@@ -165,7 +165,27 @@ type ListFilter struct {
 	// Status filters on the OKF status field in frontmatter (json_extract
 	// $.status), case-insensitive, with the same SQL/JSON semantics as DocType.
 	Status string
-	Limit  int
+	// ExcludeCollections drops rows whose collection is in the list — the
+	// server-side visibility boundary ([security].visibility.deny). Callers set it
+	// from config so a hidden collection never surfaces in list/task output.
+	ExcludeCollections []string
+	Limit              int
+}
+
+// whereExcludeCollections appends a `collection NOT IN (…)` condition and its
+// bound args when f hides any collections. Shared by the document list and digest
+// queries so both honor the visibility boundary identically.
+func whereExcludeCollections(where []string, args []any, f ListFilter) ([]string, []any) {
+	if len(f.ExcludeCollections) == 0 {
+		return where, args
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?, ", len(f.ExcludeCollections)), ", ")
+	where = append(where, "collection NOT IN ("+ph+")")
+	for _, c := range f.ExcludeCollections {
+		args = append(args, c)
+	}
+
+	return where, args
 }
 
 // ListDocuments returns document metadata rows ordered by uri, narrowed by the
@@ -200,6 +220,7 @@ func ListDocuments(ctx context.Context, db *sql.DB, f ListFilter) ([]DocumentRow
 		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.status')) END) = lower(?)")
 		args = append(args, f.Status)
 	}
+	where, args = whereExcludeCollections(where, args, f)
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -282,6 +303,7 @@ func ListDocumentDigests(ctx context.Context, db *sql.DB, f ListFilter) ([]Docum
 		where = append(where, "(CASE WHEN json_valid(frontmatter_json) THEN lower(json_extract(frontmatter_json, '$.status')) END) = lower(?)")
 		args = append(args, f.Status)
 	}
+	where, args = whereExcludeCollections(where, args, f)
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
