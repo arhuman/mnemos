@@ -100,10 +100,22 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   overwritten, journaled passes). Frontmatter contracts and the full
   consolidation procedure live in `references/task-schema.md` and
   `references/consolidation.md`, read on demand.
-- Claude Code hooks example at `skills/mnemos-okf/hooks/settings.example.json`:
-  deterministic working-set injection via `SessionStart` (at startup, resume,
-  and after compaction) and cue-gated recall via `UserPromptSubmit`; requires
-  `jq`; silent no-op when no cue matches.
+- Native `mnemos hook session-start` and `mnemos hook recall` subcommands
+  (plan §4.1-4.2) replace the former multi-process, `jq`-dependent hook shell
+  pipelines. Each is one Go process that reads the Claude Code event JSON from
+  stdin and resolves the workspace first, staying completely silent (no output,
+  exit 0) when the project has no mnemos workspace so an uninitialized project
+  never leaks the global store. `session-start` injects the scoped working set
+  (open `in_progress`/`todo` tasks — never `done` — and recent decisions),
+  labelling lines by collection when the global store is in scope, under a
+  `--max-tokens` cap. `recall` extracts salient (stopword-stripped) terms from
+  the prompt, runs a lexical-only search (never loads the embedding model in the
+  hot path), and injects the top cited hits — staying silent on no hits and on
+  input that is neither cue-phrased nor question-shaped, so it no longer injects
+  "no results" noise.
+- Claude Code hooks example at `skills/mnemos-okf/hooks/settings.example.json`
+  wires those subcommands to `SessionStart` (at startup, resume, and after
+  compaction) and `UserPromptSubmit`; no `jq` dependency.
 - `make install-hooks` target merges those hooks into `~/.claude/settings.json`
   idempotently (marker-keyed, keeps a `.bak`); `install-skill` now calls it so a
   single install both copies the skill and activates its hooks. `SKIP_HOOKS=1`
