@@ -89,6 +89,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newOkfyCmd(state))
 	root.AddCommand(newValidateCmd(state))
 	root.AddCommand(newTaskCmd(state))
+	root.AddCommand(newHookCmd(state))
 
 	return root
 }
