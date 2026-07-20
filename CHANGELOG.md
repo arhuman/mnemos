@@ -126,6 +126,12 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   path is refused with guidance.
 
 ### Fixed
+- `mnemos task list` now titles each task from its frontmatter `title:` (falling back to
+  the heading-derived title only when absent), instead of always showing the first
+  heading — so a task file whose first heading is `## Goal` no longer lists as "Goal". It
+  also shows each task's collection, and filters `type`/`status` in SQL via `json_extract`
+  (guarded by `json_valid`) rather than scanning every document and JSON-decoding it in
+  Go. `ListFilter` gains `DocType`/`Status`.
 - `mnemos.remember` to an explicit path now preserves a body's existing frontmatter
   instead of prepending a second block. Read-modify-write of a stateful document (a
   task state file, `status.md`, a decision) is lossless: the author's

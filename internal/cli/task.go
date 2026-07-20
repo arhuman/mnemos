@@ -24,11 +24,13 @@ const noStatusLabel = "(no status)"
 var statusOrder = []string{"in_progress", "todo", "done"}
 
 // taskItem is one indexed Task document reduced to the fields `task list`
-// renders: its uri (citation), title, and free-form (lowercased) status.
+// renders: its uri (citation), collection, title, and free-form (lowercased)
+// status.
 type taskItem struct {
-	URI    string
-	Title  string
-	Status string
+	URI        string
+	Collection string
+	Title      string
+	Status     string
 }
 
 // taskGroup is the set of tasks that share a status, in display order.
@@ -63,23 +65,32 @@ func newTaskCmd(state *rootState) *cobra.Command {
 
 func runTaskList(cmd *cobra.Command, state *rootState, collection, status string) error {
 	return withStore(state, false, func(a *app.App) error {
-		docs, err := storage.ListDocuments(cmd.Context(), a.DB, storage.ListFilter{Collection: collection})
+		// Type and status are filtered in SQL (json_extract), so this returns only
+		// the Task documents to render rather than every document for a Go-side
+		// scan and per-row JSON decode.
+		docs, err := storage.ListDocuments(cmd.Context(), a.DB, storage.ListFilter{
+			Collection: collection,
+			DocType:    "task",
+			Status:     status,
+		})
 		if err != nil {
 			return err
 		}
 
-		wantStatus := strings.ToLower(strings.TrimSpace(status))
-		var items []taskItem
+		items := make([]taskItem, 0, len(docs))
 		for _, d := range docs {
-			docType, st := taskMeta(d.FrontmatterJSON)
-			if !strings.EqualFold(strings.TrimSpace(docType), "Task") {
-				continue
+			_, st, title := taskMeta(d.FrontmatterJSON)
+			// The document title is authoritative; fall back to the indexed title
+			// (derived from the first heading) only when frontmatter omits it.
+			if strings.TrimSpace(title) == "" {
+				title = d.Title
 			}
-			st = strings.ToLower(strings.TrimSpace(st))
-			if wantStatus != "" && st != wantStatus {
-				continue
-			}
-			items = append(items, taskItem{URI: d.URI, Title: d.Title, Status: st})
+			items = append(items, taskItem{
+				URI:        d.URI,
+				Collection: d.Collection,
+				Title:      title,
+				Status:     strings.ToLower(strings.TrimSpace(st)),
+			})
 		}
 
 		renderTaskGroups(cmd.OutOrStdout(), groupTasks(items))
@@ -88,20 +99,21 @@ func runTaskList(cmd *cobra.Command, state *rootState, collection, status string
 	})
 }
 
-// taskMeta extracts the `type` and `status` fields from a document's stored
-// frontmatter JSON. Missing or malformed frontmatter yields empty values.
-func taskMeta(js string) (docType, status string) {
+// taskMeta extracts the `type`, `status`, and `title` fields from a document's
+// stored frontmatter JSON. Missing or malformed frontmatter yields empty values.
+func taskMeta(js string) (docType, status, title string) {
 	if js == "" {
-		return "", ""
+		return "", "", ""
 	}
 	var m map[string]any
 	if json.Unmarshal([]byte(js), &m) != nil {
-		return "", ""
+		return "", "", ""
 	}
 	docType, _ = m["type"].(string)
 	status, _ = m["status"].(string)
+	title, _ = m["title"].(string)
 
-	return docType, status
+	return docType, status, title
 }
 
 // groupTasks buckets tasks by status and returns the buckets in a fixed order:
@@ -161,7 +173,7 @@ func renderTaskGroups(out io.Writer, groups []taskGroup) {
 		_, _ = fmt.Fprintf(out, "%s (%d)\n", g.Status, len(g.Items))
 		w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 		for _, it := range g.Items {
-			_, _ = fmt.Fprintf(w, "  %s\t%s\n", it.URI, dash(it.Title))
+			_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\n", it.URI, dash(it.Collection), dash(it.Title))
 		}
 		_ = w.Flush()
 	}
