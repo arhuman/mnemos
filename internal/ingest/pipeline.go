@@ -28,6 +28,11 @@ type Options struct {
 	Collection string
 	Rules      Rules
 	Chunking   chunk.Config
+	// Force bypasses the content-hash skip so an unchanged file is re-parsed and
+	// rewritten anyway. It is how a parser or schema change is propagated to
+	// already-indexed documents; the oversize, binary, and unparseable skips still
+	// apply. Off for normal ingest/watch, which stay hash-skip-fast.
+	Force bool
 }
 
 // Rules mirrors the config glob sets that drive file selection.
