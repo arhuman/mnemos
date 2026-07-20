@@ -218,7 +218,7 @@ It's optional and Claude Code-specific: the server works with any MCP client
 without it. Install it user-wide (all projects):
 
 ```bash
-make install-skill        # copies skills/mnemos-okf -> ~/.claude/skills/
+make install-skill        # copies skills/mnemos-okf -> ~/.claude/skills/ and merges its hooks
 ```
 
 Or place it manually, e.g. project-level for this repo only:
@@ -265,7 +265,7 @@ done (1)
 
 ### Automation with hooks
 
-The skill is advisory: the model decides when to fire each mode. Claude Code hooks make the memory loop deterministic. Merge [`skills/mnemos-okf/hooks/settings.example.json`](skills/mnemos-okf/hooks/settings.example.json) into your `.claude/settings.json` to activate two hooks:
+The skill is advisory: the model decides when to fire each mode. Claude Code hooks make the memory loop deterministic. `make install-skill` (or `make install-hooks` on its own) merges [`skills/mnemos-okf/hooks/settings.example.json`](skills/mnemos-okf/hooks/settings.example.json) into your `~/.claude/settings.json` idempotently, keeping a `.bak`; pass `SKIP_HOOKS=1` to opt out, or merge the file by hand for a project-level `.claude/settings.json`. Two hooks are activated:
 
 | Hook | Matcher | Effect |
 |------|---------|--------|
