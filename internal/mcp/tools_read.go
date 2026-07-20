@@ -44,17 +44,17 @@ func (s *Server) registerRead() {
 	}, s.handleRead)
 }
 
-func (s *Server) handleRead(ctx context.Context, _ *mcpsdk.CallToolRequest, in readInput) (*mcpsdk.CallToolResult, readOutput, error) {
+func (s *Server) handleRead(ctx context.Context, _ *mcpsdk.CallToolRequest, in readInput) (*mcpsdk.CallToolResult, any, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, readOutput{}, err
+		return nil, nil, err
 	}
 
 	res, err := s.svc.ReadOne(ctx, in.URI, in.ChunkID)
 	if err != nil {
-		return nil, readOutput{}, err
+		return nil, nil, err
 	}
 
-	return nil, toReadOutput(res), nil
+	return s.result(toReadOutput(res))
 }
 
 // toReadOutput maps a service ReadResult to the MCP response shape.

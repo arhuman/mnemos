@@ -40,7 +40,7 @@ func (s *Server) registerContext() {
 	}, s.handleContext)
 }
 
-func (s *Server) handleContext(ctx context.Context, _ *mcpsdk.CallToolRequest, in contextInput) (*mcpsdk.CallToolResult, contextOutput, error) {
+func (s *Server) handleContext(ctx context.Context, _ *mcpsdk.CallToolRequest, in contextInput) (*mcpsdk.CallToolResult, any, error) {
 	blocks, err := s.svc.Context(ctx, s.retriever, search.Query{
 		Text:          in.Query,
 		Collection:    in.Collection,
@@ -50,7 +50,7 @@ func (s *Server) handleContext(ctx context.Context, _ *mcpsdk.CallToolRequest, i
 		Limit:         in.Limit,
 	})
 	if err != nil {
-		return nil, contextOutput{}, err
+		return nil, nil, err
 	}
 
 	out := contextOutput{Query: in.Query, Context: make([]contextBlock, 0, len(blocks))}
@@ -58,5 +58,5 @@ func (s *Server) handleContext(ctx context.Context, _ *mcpsdk.CallToolRequest, i
 		out.Context = append(out.Context, contextBlock{Source: b.Source, Content: b.Content})
 	}
 
-	return nil, out, nil
+	return s.result(out)
 }

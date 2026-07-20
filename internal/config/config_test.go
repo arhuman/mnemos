@@ -73,3 +73,26 @@ func TestLoadMalformedFileErrors(t *testing.T) {
 	_, err := config.Load(path, exists)
 	require.Error(t, err)
 }
+
+func TestDefaultResultModeIsText(t *testing.T) {
+	cfg, err := config.Load("", missing)
+	require.NoError(t, err)
+	require.Equal(t, "text", cfg.MCP.ResultMode)
+}
+
+func TestLoadAcceptsValidResultModes(t *testing.T) {
+	for _, mode := range []string{"text", "structured", "both"} {
+		dir := t.TempDir()
+		path := writeFile(t, dir, "mnemos.toml", "[mcp]\nresult_mode = \""+mode+"\"\n")
+		cfg, err := config.Load(path, exists)
+		require.NoError(t, err)
+		require.Equal(t, mode, cfg.MCP.ResultMode)
+	}
+}
+
+func TestLoadRejectsInvalidResultMode(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "mnemos.toml", "[mcp]\nresult_mode = \"xml\"\n")
+	_, err := config.Load(path, exists)
+	require.Error(t, err)
+}

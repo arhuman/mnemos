@@ -103,6 +103,14 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   resolution source, kb root, index db).
 
 ### Changed
+- MCP tool responses are serialized once on the wire instead of twice. Previously every
+  response was emitted as both `structuredContent` and an identical mirrored `text` block;
+  handlers now build the result explicitly and default to a single text block (the form
+  the client already surfaces to the model), halving response bytes. A new
+  `[mcp].result_mode` (`text` default, or `structured`/`both`) selects the shape; an
+  unknown value is rejected at config load. Registering handlers with an untyped output
+  also drops the advertised per-tool output schema (intended: it removes the hook the SDK
+  used to auto-mirror, and trims the tool-surface token cost).
 - Workspace resolution adds a `$CLAUDE_PROJECT_DIR` rung (precedence 4, after
   `$MNEMOS_DIR` and before the cwd walk-up): an unpinned `mnemos serve` in a Claude
   Code session resolves the session's project instead of leaking the global `~/.mnemos`.

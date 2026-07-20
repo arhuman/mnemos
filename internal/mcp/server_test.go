@@ -118,15 +118,21 @@ func connectWith(t *testing.T, db *sql.DB, sc srvCfg) *mcpsdk.ClientSession {
 	return cs
 }
 
-// callTool invokes name with args and unmarshals the structured result into out.
+// callTool invokes name with args and unmarshals the result into out. The server
+// defaults to text mode, so the payload is a single TextContent block whose JSON
+// carries the response; asserting here that StructuredContent is nil and Content
+// holds exactly one text block means every tool call also proves the wire is not
+// double-emitting.
 func callTool(t *testing.T, cs *mcpsdk.ClientSession, name string, args any, out any) *mcpsdk.CallToolResult {
 	t.Helper()
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: name, Arguments: args})
 	require.NoError(t, err)
 	if out != nil && !res.IsError {
-		b, err := json.Marshal(res.StructuredContent)
-		require.NoError(t, err)
-		require.NoError(t, json.Unmarshal(b, out))
+		require.Nil(t, res.StructuredContent, "text mode must not emit structuredContent")
+		require.Len(t, res.Content, 1, "text mode must emit exactly one content block")
+		tc, ok := res.Content[0].(*mcpsdk.TextContent)
+		require.True(t, ok, "the single content block must be text")
+		require.NoError(t, json.Unmarshal([]byte(tc.Text), out))
 	}
 
 	return res
@@ -172,6 +178,25 @@ func TestSearchTool(t *testing.T) {
 	require.Equal(t, "guide.md", out.Results[0].URI)
 	require.Equal(t, "SCIM Guide", out.Results[0].Title)
 	require.NotZero(t, out.Results[0].EndLine)
+}
+
+// TestToolResponseTextOnly pins the default wire shape: a successful call emits
+// the payload exactly once, as a single TextContent block, with no
+// structuredContent copy. This is the regression guard against the former
+// double-emit.
+func TestToolResponseTextOnly(t *testing.T) {
+	cs := connect(t, ingestCorpus(t))
+
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "mnemos.search",
+		Arguments: map[string]any{"query": "SCIM provisioning Entra"},
+	})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	require.Nil(t, res.StructuredContent, "default text mode must not duplicate the payload as structuredContent")
+	require.Len(t, res.Content, 1, "the payload must be a single content block")
+	_, ok := res.Content[0].(*mcpsdk.TextContent)
+	require.True(t, ok, "the single content block must be text")
 }
 
 // TestSearchToolHonorsFilters proves the path/type filters added for CLI/MCP

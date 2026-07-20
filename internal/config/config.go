@@ -57,6 +57,12 @@ type MCPConfig struct {
 	// mnemos.move (and their CLI counterparts). It is distinct from AllowWrite
 	// so capture can be enabled without granting delete/move. Default false.
 	AllowDelete bool `koanf:"allow_delete"`
+	// ResultMode selects how tool responses are placed on the wire: "text"
+	// (default) emits the JSON payload once as a text content block;
+	// "structured" emits it once as structuredContent; "both" emits both (the
+	// legacy double-emit, kept for clients that require structuredContent).
+	// Validated at load time to one of those three values.
+	ResultMode string `koanf:"result_mode"`
 }
 
 // CaptureConfig configures write-back behaviour. The capture location itself is
@@ -99,6 +105,9 @@ use_vectors = false
 transport = "stdio"
 allow_write = false
 allow_delete = false
+# How tool responses are serialized: "text" (default, one JSON text block),
+# "structured" (one structuredContent object), or "both" (legacy double-emit).
+result_mode = "text"
 
 [capture]
 defer_to_watcher = false
@@ -162,5 +171,22 @@ func Load(path string, fileExists func(string) bool) (*Config, error) {
 		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
 
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// validate rejects loaded values the defaults cannot cover for. Only
+// [mcp].result_mode is checked today: an unknown mode would silently degrade the
+// MCP wire shape, so it is caught at load time rather than mishandled at serve.
+func (c *Config) validate() error {
+	switch c.MCP.ResultMode {
+	case "text", "structured", "both":
+	default:
+		return fmt.Errorf("config: invalid [mcp].result_mode %q (want text, structured, or both)", c.MCP.ResultMode)
+	}
+
+	return nil
 }

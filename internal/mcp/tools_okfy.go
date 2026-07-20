@@ -39,9 +39,9 @@ func (s *Server) registerOkfy() {
 	}, s.handleOkfy)
 }
 
-func (s *Server) handleOkfy(ctx context.Context, _ *mcpsdk.CallToolRequest, in okfyInput) (*mcpsdk.CallToolResult, okfyOutput, error) {
+func (s *Server) handleOkfy(ctx context.Context, _ *mcpsdk.CallToolRequest, in okfyInput) (*mcpsdk.CallToolResult, any, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, okfyOutput{}, err
+		return nil, nil, err
 	}
 
 	// Defensive re-check: the tool is only registered when allow_write is true,
@@ -49,7 +49,7 @@ func (s *Server) handleOkfy(ctx context.Context, _ *mcpsdk.CallToolRequest, in o
 	// un-gated in the service — the local CLI runs it freely — so the MCP write
 	// gate is enforced here, at the remote boundary.)
 	if !s.cfg.MCP.AllowWrite {
-		return nil, okfyOutput{}, errors.New("write disabled: set [mcp].allow_write=true")
+		return nil, nil, errors.New("write disabled: set [mcp].allow_write=true")
 	}
 
 	res, err := s.svc.Okfy(ctx, memory.OkfyInput{
@@ -61,10 +61,10 @@ func (s *Server) handleOkfy(ctx context.Context, _ *mcpsdk.CallToolRequest, in o
 		Force:      in.Force,
 	})
 	if err != nil {
-		return nil, okfyOutput{}, err
+		return nil, nil, err
 	}
 
 	s.logger.Info("okfy converted file", "source", res.SourceURI, "uri", res.URI, "chunks", res.Chunks)
 
-	return nil, okfyOutput{URI: res.URI, DocumentID: res.DocumentID, Chunks: res.Chunks}, nil
+	return s.result(okfyOutput{URI: res.URI, DocumentID: res.DocumentID, Chunks: res.Chunks})
 }

@@ -46,12 +46,12 @@ func (s *Server) registerRemember() {
 	}, s.handleRemember)
 }
 
-func (s *Server) handleRemember(ctx context.Context, _ *mcpsdk.CallToolRequest, in rememberInput) (*mcpsdk.CallToolResult, rememberOutput, error) {
+func (s *Server) handleRemember(ctx context.Context, _ *mcpsdk.CallToolRequest, in rememberInput) (*mcpsdk.CallToolResult, any, error) {
 	// Defensive re-check: the tool is only registered when allow_write is true,
 	// and the service re-checks too, but the handler refuses regardless so the
 	// gate cannot be bypassed.
 	if !s.cfg.MCP.AllowWrite {
-		return nil, rememberOutput{}, errors.New("write disabled: set [mcp].allow_write=true")
+		return nil, nil, errors.New("write disabled: set [mcp].allow_write=true")
 	}
 
 	res, err := s.svc.Remember(ctx, memory.RememberInput{
@@ -62,14 +62,14 @@ func (s *Server) handleRemember(ctx context.Context, _ *mcpsdk.CallToolRequest, 
 		Path:       in.Path,
 	})
 	if err != nil {
-		return nil, rememberOutput{}, err
+		return nil, nil, err
 	}
 
-	return nil, rememberOutput{
+	return s.result(rememberOutput{
 		URI:        res.URI,
 		DocumentID: res.DocumentID,
 		Chunks:     res.Chunks,
 		Type:       res.Type,
 		Deferred:   res.Deferred,
-	}, nil
+	})
 }
