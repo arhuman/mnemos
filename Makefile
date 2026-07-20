@@ -9,6 +9,8 @@ COVER_OUT  := coverage.out
 COVER_HTML := coverage.html
 SKILL_SRC  := skills/mnemos-okf
 SKILL_DEST := $(HOME)/.claude/skills/mnemos-okf
+CLAUDE_SETTINGS := $(HOME)/.claude/settings.json
+HOOKS_SRC       := $(SKILL_SRC)/hooks/settings.example.json
 TAPES      := docs/demo.tape docs/demo-mcp.tape
 
 # Pinned dev-tool versions installed by `make tools` (reproducible audits).
@@ -23,7 +25,7 @@ BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VPKG       := github.com/arhuman/mnemos/internal/version
 LDFLAGS    := -ldflags "-X $(VPKG).Version=$(VERSION) -X $(VPKG).GitCommit=$(COMMIT) -X $(VPKG).BuildDate=$(BUILD_DATE)"
 
-.PHONY: build build-embed test bench bench-smoke cover tidy audit tools install install-embed install-skill demo demo-check clean help
+.PHONY: build build-embed test bench bench-smoke cover tidy audit tools install install-embed install-skill install-hooks demo demo-check clean help
 
 # First target is the default (`make` == `make build`).
 ## build: compile the single binary (cgo-free) into bin/
@@ -83,12 +85,28 @@ install:
 install-embed:
 	CGO_ENABLED=0 go install -tags embed $(LDFLAGS) $(CMD)
 
-## install-skill: install the Claude Code mnemos-okf skill into ~/.claude/skills/
+## install-skill: install the mnemos-okf skill into ~/.claude/skills/ and merge its hooks
 install-skill:
 	rm -rf $(SKILL_DEST)
 	mkdir -p $(SKILL_DEST)
 	cp -R $(SKILL_SRC)/. $(SKILL_DEST)/
 	@echo "installed skill -> $(SKILL_DEST)"
+	@$(MAKE) install-hooks
+
+## install-hooks: merge mnemos SessionStart/UserPromptSubmit hooks into ~/.claude/settings.json (idempotent; SKIP_HOOKS=1 to skip)
+install-hooks:
+ifndef SKIP_HOOKS
+	@command -v jq >/dev/null || { echo "jq not found: required to merge hooks (brew install jq)"; exit 1; }
+	@mkdir -p $(dir $(CLAUDE_SETTINGS))
+	@[ -f $(CLAUDE_SETTINGS) ] || echo '{}' > $(CLAUDE_SETTINGS)
+	@cp $(CLAUDE_SETTINGS) $(CLAUDE_SETTINGS).bak
+	@jq -n --slurpfile cur $(CLAUDE_SETTINGS) --slurpfile add $(HOOKS_SRC) \
+	  '($$cur[0] // {}) as $$c | ($$add[0].hooks) as $$h | $$c | .hooks = (.hooks // {}) | reduce ($$h | keys_unsorted[]) as $$k (.; .hooks[$$k] = (((.hooks[$$k] // []) | map(select([.hooks[]?.command // ""] | any(test("mnemos-okf-hook")) | not))) + $$h[$$k]))' \
+	  > $(CLAUDE_SETTINGS).tmp && mv $(CLAUDE_SETTINGS).tmp $(CLAUDE_SETTINGS)
+	@echo "merged mnemos hooks -> $(CLAUDE_SETTINGS) (backup: $(CLAUDE_SETTINGS).bak)"
+else
+	@echo "SKIP_HOOKS set -> leaving $(CLAUDE_SETTINGS) untouched"
+endif
 
 ## demo: render the README demo GIFs from the VHS tapes (needs vhs + mnemos on PATH; demo-mcp also needs claude)
 demo:

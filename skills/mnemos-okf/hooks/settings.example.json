@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v mnemos >/dev/null || exit 0; echo '## mnemos working set'; mnemos task list 2>/dev/null; echo; echo '### Recent decisions'; mnemos ls decisions --limit 5 2>/dev/null; exit 0"
+            "command": "command -v mnemos >/dev/null || exit 0; echo '## mnemos working set'; mnemos task list 2>/dev/null; echo; echo '### Recent decisions'; mnemos ls decisions --limit 5 2>/dev/null; exit 0 # mnemos-okf-hook"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v mnemos >/dev/null && command -v jq >/dev/null || exit 0; p=$(jq -r '.prompt // empty'); [ -n \"$p\" ] || exit 0; printf '%s' \"$p\" | grep -qiE 'as we decided|what was|remember when|why did we|the usual|comme on avait|c.etait quoi' || exit 0; echo '## mnemos recall (top 3, verify before use)'; mnemos search \"$p\" --limit 3 2>/dev/null; exit 0"
+            "command": "command -v mnemos >/dev/null && command -v jq >/dev/null || exit 0; p=$(jq -r '.prompt // empty'); [ -n \"$p\" ] || exit 0; printf '%s' \"$p\" | grep -qiE 'as we decided|what was|remember when|why did we|the usual|comme on avait|c.etait quoi' || exit 0; echo '## mnemos recall (top 3, verify before use)'; mnemos search \"$p\" --limit 3 2>/dev/null; exit 0 # mnemos-okf-hook"
           }
         ]
       }
