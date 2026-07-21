@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -166,18 +166,19 @@ func writeWorkingSet(ctx context.Context, buf *bytes.Buffer, a *app.App) {
 		}
 	}
 
-	if len(decisions) > 0 {
-		_, _ = fmt.Fprintln(buf, "\n### Recent decisions")
-		for _, d := range decisions {
-			title := d.Title
-			if strings.TrimSpace(title) == "" {
-				title = d.URI
-			}
-			if labelled && d.Collection != "" {
-				_, _ = fmt.Fprintf(buf, "- %s — %s (%s)\n", dash(title), d.Collection, d.URI)
-			} else {
-				_, _ = fmt.Fprintf(buf, "- %s (%s)\n", dash(title), d.URI)
-			}
+	if len(decisions) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(buf, "\n### Recent decisions")
+	for _, d := range decisions {
+		title := d.Title
+		if strings.TrimSpace(title) == "" {
+			title = d.URI
+		}
+		if labelled && d.Collection != "" {
+			_, _ = fmt.Fprintf(buf, "- %s — %s (%s)\n", dash(title), d.Collection, d.URI)
+		} else {
+			_, _ = fmt.Fprintf(buf, "- %s (%s)\n", dash(title), d.URI)
 		}
 	}
 }
@@ -206,12 +207,16 @@ func openTasks(ctx context.Context, a *app.App) []taskItem {
 		}
 		items = append(items, taskItem{URI: d.URI, Collection: d.Collection, Title: title, Status: status})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].Status != items[j].Status {
-			return items[i].Status == "in_progress"
+	slices.SortStableFunc(items, func(a, b taskItem) int {
+		if a.Status != b.Status {
+			if a.Status == "in_progress" {
+				return -1
+			}
+
+			return 1
 		}
 
-		return items[i].URI < items[j].URI
+		return strings.Compare(a.URI, b.URI)
 	})
 
 	return items
@@ -229,8 +234,8 @@ func recentDecisions(ctx context.Context, a *app.App, limit int) []browse.Entry 
 	if err != nil {
 		return nil
 	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		return entries[i].ModifiedAt > entries[j].ModifiedAt
+	slices.SortStableFunc(entries, func(a, b browse.Entry) int {
+		return strings.Compare(b.ModifiedAt, a.ModifiedAt)
 	})
 	if len(entries) > limit {
 		entries = entries[:limit]
@@ -263,12 +268,12 @@ func hookRecall(cmd *cobra.Command, state *rootState, limit, maxTokens int) stri
 		// visibility denylist to the results.
 		svc := memory.New(a.DB, a.Config, a.TreeRoot(), nil, a.Logger)
 		engine := search.NewEngine(a.DB, a.Logger)
-		results, err := svc.Search(ctx(cmd), engine, search.Query{
+		results, searchErr := svc.Search(ctx(cmd), engine, search.Query{
 			Text:  strings.Join(terms, " "),
 			Limit: limit,
 		})
-		if err != nil || len(results) == 0 {
-			return err
+		if searchErr != nil || len(results) == 0 {
+			return searchErr
 		}
 		_, _ = fmt.Fprintln(&buf, "## mnemos recall (top hits — verify before use)")
 		for i, r := range results {
