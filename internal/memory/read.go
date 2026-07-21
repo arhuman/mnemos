@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/arhuman/mnemos/internal/model"
@@ -48,8 +49,22 @@ type ReadOptions struct {
 	MaxTokens int
 }
 
+// hiddenCollection reports whether collection is on the server-side visibility
+// deny list ([security].visibility.deny). The read verbs use it to treat a hidden
+// document exactly like an absent one: a hidden collection must never surface even
+// when a caller names a uri or chunk_id in it, and it must be indistinguishable
+// from a genuine not-found so read cannot be used as an existence oracle.
+func (s *Service) hiddenCollection(collection string) bool {
+	if collection == "" {
+		return false
+	}
+
+	return slices.Contains(s.cfg.HiddenCollections(), collection)
+}
+
 // ReadChunk returns a single chunk's content and its citation. An unknown
-// chunk_id is a not-found error, not a crash.
+// chunk_id is a not-found error, not a crash. A chunk in a hidden collection
+// returns the same not-found error as a missing one (see hiddenCollection).
 func (s *Service) ReadChunk(ctx context.Context, chunkID string) (ReadResult, error) {
 	c, err := storage.GetChunkByID(ctx, s.db, chunkID)
 	if err != nil {
@@ -62,6 +77,9 @@ func (s *Service) ReadChunk(ctx context.Context, chunkID string) (ReadResult, er
 	doc, err := storage.GetDocumentByID(ctx, s.db, c.DocumentID)
 	if err != nil {
 		return ReadResult{}, fmt.Errorf("memory: read chunk document: %w", err)
+	}
+	if doc != nil && s.hiddenCollection(doc.Collection) {
+		return ReadResult{}, fmt.Errorf("unknown chunk_id %q", chunkID)
 	}
 
 	uri, collection, title := "", "", ""
@@ -105,14 +123,20 @@ func (s *Service) ReadDocumentOpts(ctx context.Context, uri string, opts ReadOpt
 		return ReadResult{}, fmt.Errorf("unknown uri %q", uri)
 	}
 
-	chunks, err = scopeChunks(chunks, opts, uri)
-	if err != nil {
-		return ReadResult{}, err
-	}
-
+	// Fetch the document before scoping so a hidden collection returns the same
+	// not-found error as a missing uri, ahead of (and indistinguishable from) any
+	// section/line scope-mismatch error.
 	doc, err := storage.GetDocumentByURI(ctx, s.db, uri)
 	if err != nil {
 		return ReadResult{}, fmt.Errorf("memory: read document metadata: %w", err)
+	}
+	if doc != nil && s.hiddenCollection(doc.Collection) {
+		return ReadResult{}, fmt.Errorf("unknown uri %q", uri)
+	}
+
+	chunks, err = scopeChunks(chunks, opts, uri)
+	if err != nil {
+		return ReadResult{}, err
 	}
 
 	collection, title := "", ""
