@@ -1,24 +1,25 @@
-# Configuration (`.mnemos.toml`)
+# Configuration (`mnemos.toml`)
 
-Configuration is layered, lowest precedence first:
+mnemos reads a single `mnemos.toml` from the active **MNEMOS_DIR**. The effective
+configuration is the built-in defaults overlaid with that file: each key the file
+sets wins, and every key it omits falls through to the default, so a partial file
+(or no file at all) is fine.
 
-1. **Built-in defaults** (the values shown below).
-2. **`~/.mnemos.toml`**: user-global overrides, applied to every project.
-3. **`./.mnemos.toml`**: the project file in the working directory; its keys win over the home file.
+MNEMOS_DIR is resolved in order: an explicit `--mnemos-dir`, `--config`, or
+`$MNEMOS_DIR`; otherwise the nearest project `.mnemos/` found by walking up from the
+working directory; otherwise the global `~/.mnemos`. The config file is always
+`<MNEMOS_DIR>/mnemos.toml`. Passing `--config <path>` names that file directly, and
+its parent directory becomes the MNEMOS_DIR (and tree root).
 
-Each layer overrides only the keys it sets; everything else falls through to the
-layer below, so a partial file is fine. Passing `--config <path>` **replaces** this
-auto-discovery entirely: only that file is layered on top of the defaults (the home
-and project files are ignored), and its directory becomes the tree root.
+The config carries behaviour only — indexing, chunking, search, the MCP surface,
+and security — never locations: every path (index db, kb, capture, models) is
+derived from MNEMOS_DIR, not configured here.
 
 ```toml
-[storage]
-path = ".mnemos/mnemos.db"
-
 [indexing]
 include = ["**/*.md", "**/*.txt", "**/*.go", "**/*.sql"]
 exclude = [".git/**", "node_modules/**", "vendor/**", "dist/**"]
-max_file_bytes = 4194304    # skip any single file larger than this (0 disables)
+max_file_bytes = 4194304    # skip any single file larger than this (0 disables the cap)
 
 [chunking]
 target_tokens = 700
@@ -26,19 +27,26 @@ overlap_tokens = 80
 
 [search]
 default_limit = 12
+use_vectors = false         # true => hybrid lexical+vector search (needs the embed build + a model)
 
 [mcp]
 transport = "stdio"
-allow_write = false        # gates mnemos.remember
-allow_delete = false       # gates mnemos.forget and mnemos.move
+allow_write = false         # gates mnemos.remember
+allow_delete = false        # gates mnemos.forget and mnemos.move
+result_mode = "text"        # wire shape: "text" | "structured" | "both" (legacy double-emit)
 
 [capture]
-dir = ".mnemos/capture"    # default path for auto-named notes
-defer_to_watcher = false   # true => remember is write-only, watcher ingests
+defer_to_watcher = false    # true => remember is write-only, a running watcher ingests
 
 [security]
 exclude_secrets = true
 exclude = ["**/.env", "**/*.pem", "**/*.key", "**/id_rsa", "**/secrets/**"]
+
+[security.visibility]
+# Collections hidden from every query surface (search, context, read, list, task),
+# enforced server-side. Empty by default. A hidden collection never surfaces even
+# when a caller names it. Example: deny = ["perso", "epfl"]
+deny = []
 ```
 
 See also [commands.md](commands.md) for the CLI reference, and
