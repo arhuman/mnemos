@@ -34,14 +34,8 @@ jobs:
         run: CGO_ENABLED=0 go build -tags embed ./...
       - name: Vet
         run: go vet ./...
-      - name: Test (race + coverage)
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
-      - name: Coverage gate (>= 80%)
-        run: |
-          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
-          echo "total coverage: ${total}%"
-          awk "BEGIN{ exit !(${total}+0 >= 80) }" \
-            || { echo "FAIL: coverage ${total}% is below the 80% gate"; exit 1; }
+      - name: Test + coverage gate (total + per-package, >= 80%)
+        run: make cover
       - name: Benchmarks (smoke, 1x)
         run: go test -run='^$' -bench=. -benchmem -benchtime=1x ./...
 

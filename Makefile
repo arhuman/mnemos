@@ -48,15 +48,25 @@ bench:
 bench-smoke:
 	go test -run='^$$' -bench=. -benchmem -benchtime=1x ./...
 
-## cover: run tests with coverage, write reports, fail under COVER_MIN%
+## cover: run tests with coverage, write reports, fail under COVER_MIN% total or per package
 cover:
-	go test -race -covermode=atomic -coverprofile=$(COVER_OUT) ./...
+	go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=$(COVER_OUT) ./...
 	go tool cover -func=$(COVER_OUT)
 	go tool cover -html=$(COVER_OUT) -o $(COVER_HTML)
 	@total=$$(go tool cover -func=$(COVER_OUT) | awk '/^total:/ {gsub(/%/,"",$$3); print $$3}'); \
 	echo "total coverage: $$total% (minimum $(COVER_MIN)%)"; \
 	awk "BEGIN{ exit !($$total+0 >= $(COVER_MIN)) }" || \
 	  { echo "FAIL: total coverage $$total% is below the $(COVER_MIN)% gate"; exit 1; }
+	@echo "per-package floor: minimum $(COVER_MIN)% (--coverpkg cross-package attribution)"; \
+	awk -v min=$(COVER_MIN) 'NR>1 { k=$$1; st[k]=$$2; hit[k]+=$$3 } \
+	  END { \
+	    for (k in st) { split(k,a,":"); f=a[1]; n=split(f,p,"/"); d=p[1]; \
+	      for (i=2;i<n;i++) d=d"/"p[i]; tot[d]+=st[k]; if (hit[k]>0) cov[d]+=st[k] } \
+	    fail=0; \
+	    for (d in tot) { pct=100*cov[d]/tot[d]; \
+	      if (pct+0 < min+0) { printf "  FAIL %5.1f%%  %s\n", pct, d; fail=1 } } \
+	    if (fail) { print "FAIL: a package is below the " min "% per-package gate"; exit 1 } \
+	    print "  all internal packages >= " min "%" }' $(COVER_OUT)
 
 ## tidy: tidy go.mod and gofmt the source tree
 tidy:
