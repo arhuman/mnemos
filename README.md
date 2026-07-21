@@ -43,7 +43,7 @@ make install
 
 # 2. index a project
 cd ~/work/myproject
-mnemos init                                 # creates ./.mnemos.toml + ./.mnemos/
+mnemos init                                 # creates ./.mnemos/ (mnemos.toml, kb, db, models)
 mnemos ingest docs --collection myproject   # index a directory
 mnemos search "why did we choose this architecture"
 ```
@@ -62,7 +62,7 @@ mnemos search "why did we choose this architecture"
 Then wire it into Claude Code (note the **absolute** `--config` path):
 
 ```bash
-claude mcp add mnemos -- mnemos serve --config /abs/path/to/myproject/.mnemos.toml
+claude mcp add mnemos -- mnemos serve --config /abs/path/to/myproject/.mnemos/mnemos.toml
 ```
 
 Now Claude answers from your project instead of guessing, and shows its source:
@@ -166,13 +166,13 @@ mnemos eval examples/onpage-seo/bundle --semantic    # the hard case → 0.57
 The 60-second path above used `claude mcp add` with an **absolute `--config`** path:
 
 ```bash
-claude mcp add mnemos -- mnemos serve --config /abs/path/to/project/.mnemos.toml
+claude mcp add mnemos -- mnemos serve --config /abs/path/to/project/.mnemos/mnemos.toml
 ```
 
 To share it with the repo, commit it via `.mcp.json` instead:
 
 ```json
-{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--config", "/abs/path/to/project/.mnemos.toml"] } } }
+{ "mcpServers": { "mnemos": { "command": "mnemos", "args": ["serve", "--config", "/abs/path/to/project/.mnemos/mnemos.toml"] } } }
 ```
 
 Verify with `claude mcp list` (should show `mnemos ✓ connected`) and `/mcp` inside
@@ -303,7 +303,7 @@ Run a watcher to reindex on change (incremental; removes deleted files):
 mnemos watch . --collection myproject
 ```
 
-Enable write-back in `.mnemos.toml` so Claude can capture and manage notes:
+Enable write-back in `.mnemos/mnemos.toml` so Claude can capture and manage notes:
 
 ```toml
 [mcp]
@@ -354,7 +354,7 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 ## Reference
 
 - **[docs/commands.md](docs/commands.md)** — every CLI command and its flags.
-- **[docs/configuration.md](docs/configuration.md)** — the layered `.mnemos.toml`, with all defaults.
+- **[docs/configuration.md](docs/configuration.md)** — the layered `.mnemos/mnemos.toml`, with all defaults.
 - **[docs/paths-and-indexing.md](docs/paths-and-indexing.md)** — how state is located, what gets indexed, where writes land, and the idempotency/URI rules.
 - **[docs/architecture.md](docs/architecture.md)** — design principles and the retrieval-evaluation methodology.
 
