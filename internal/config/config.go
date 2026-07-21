@@ -134,9 +134,10 @@ exclude = [
 ]
 
 [security.visibility]
-# Collections hidden from every query surface (search, context, list, task),
+# Collections hidden from every query surface (search, context, read, list, task),
 # enforced server-side. Empty by default, so all collections are visible. A hidden
-# collection never surfaces even if a caller names it. Example:
+# collection never surfaces even if a caller names it (including read by uri or
+# chunk_id, which returns the same not-found as an absent one). Example:
 #   deny = ["perso", "epfl"]
 deny = []
 `
@@ -159,7 +160,7 @@ func (c *Config) ConfinementExclude() []string {
 // HiddenCollections returns the collections hidden from every query surface (the
 // [security].visibility.deny list). Empty by default. The query layer excludes
 // these collections server-side so hidden content never surfaces in
-// search/context/list/task regardless of caller-supplied filters.
+// search/context/read/list/task regardless of caller-supplied filters.
 func (c *Config) HiddenCollections() []string {
 	return c.Security.Visibility.Deny
 }
