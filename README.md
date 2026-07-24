@@ -6,6 +6,8 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/arhuman/mnemos)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+[![OKF BundleDex](https://bundledex.net/static-badge.svg)](https://bundledex.net)
+
 ### Give your AI agent a memory it can cite.
 
 > **Local memory for AI agents. Source citations included.**
