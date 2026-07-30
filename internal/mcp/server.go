@@ -91,6 +91,7 @@ func NewServer(db *sql.DB, retriever search.Retriever, cfg *config.Config, treeR
 	srv.registerRead()
 	srv.registerContext()
 	srv.registerList()
+	srv.registerRelated()
 	if cfg.MCP.AllowWrite {
 		srv.registerRemember()
 		srv.registerOkfy()

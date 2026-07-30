@@ -36,15 +36,22 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   a subset of its chunks; `search` scores are rounded to one decimal.
 - Native OKF (Open Knowledge Format) support: frontmatter, cross-link edges
   (stored), and `index.md` structure handling.
-- MCP tools: `search`, `read`, `context`, `remember`, `okfy`, `list`, `forget`,
-  `move`. Write/delete tools are gated behind `allow_write` / `allow_delete`.
+- MCP tools: `search`, `read`, `context`, `list`, `related`, `remember`, `okfy`,
+  `forget`, `move`. Write/delete tools are gated behind `allow_write` /
+  `allow_delete`.
+- Link-graph traversal: `related` (MCP tool and CLI) returns a document's 1-hop
+  neighbors, the outbound links it contains and the inbound backlinks that point
+  at it (document-level, directed). Dangling outbound targets surface with
+  `resolved:false`; neighbors honor the `[security].visibility.deny` boundary.
+  Backed by a new `idx_links_dst_doc` index so inbound lookups no longer scan the
+  whole links table.
 - Move (`mv`/`mnemos.move`) un-indexes old URIs before the on-disk rename, so a
   failure never leaves phantom URIs in the index; directory moves are best-effort
   and report an aggregated error, and the count of orphaned inbound links is
   surfaced to the caller. See ADR 0004.
-- CLI: `init`, `ingest`, `search`, `ls`, `eval`, `watch`, `serve`, `status`,
-  `version`, `models install`, `reindex`, `validate`, `task list`, `forget`,
-  `mv`, `okfy`.
+- CLI: `init`, `ingest`, `search`, `ls`, `related`, `eval`, `watch`, `serve`,
+  `status`, `version`, `models install`, `reindex`, `validate`, `task list`,
+  `forget`, `mv`, `okfy`.
 - `reindex --content` re-parses and rewrites every already-indexed document from
   its on-disk file, bypassing the unchanged-file content-hash skip, so a parser or
   schema change (e.g. the frontmatter-title fix) propagates to the whole index

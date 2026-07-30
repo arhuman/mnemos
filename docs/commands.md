@@ -9,6 +9,7 @@ Every `mnemos` CLI command. Note the spelling split: `mnemos.search` (dot) is th
 | `mnemos ingest <path> --collection <c>` | Index a file or directory |
 | `mnemos search <query> [--collection --path --type --since --limit --semantic --json]` | Search the index (`--semantic` fuses lexical + vector; needs the embed build) |
 | `mnemos ls [path] [--collection --type --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
+| `mnemos related <uri> [--direction --limit --json]` | List a document's 1-hop link-graph neighbors (outbound links and inbound backlinks) |
 | `mnemos eval <okf-bundle> [--baseline <f> --save --semantic --limit N]` | Retrieval-quality eval on an OKF bundle (`--semantic` evaluates the hybrid retriever) |
 | `mnemos watch <path> --collection <c>` | Watch and incrementally reindex |
 | `mnemos serve` | Run the MCP server (stdio) |
