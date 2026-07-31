@@ -13,10 +13,12 @@ import (
 
 // evalFlags holds the values bound to the eval command's flags.
 type evalFlags struct {
-	baseline string
-	save     bool
-	limit    int
-	semantic bool
+	baseline  string
+	save      bool
+	limit     int
+	semantic  bool
+	graph     bool
+	seedDepth int
 }
 
 // newEvalCmd builds the `eval <bundle>` command. It runs the OKF held-out
@@ -34,8 +36,10 @@ func newEvalCmd(state *rootState) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&f.baseline, "baseline", "", "path to baseline.json (default: <bundle>/baseline.json)")
 	cmd.Flags().BoolVar(&f.save, "save", false, "write current metrics to the baseline path")
-	cmd.Flags().IntVar(&f.limit, "limit", 0, "retrieval depth K (default: 12)")
+	cmd.Flags().IntVar(&f.limit, "limit", 0, "retrieval depth K (default: 12; 3 in --graph mode)")
 	cmd.Flags().BoolVar(&f.semantic, "semantic", false, "evaluate the hybrid retriever (requires -tags embed build and an installed model)")
+	cmd.Flags().BoolVar(&f.graph, "graph", false, "run the graph-answerability eval (reads <bundle>/cases.json; measures link-neighborhood inclusion vs plain search)")
+	cmd.Flags().IntVar(&f.seedDepth, "seed-depth", 0, "in --graph mode, how many top hits to expand neighbors from (default: K)")
 
 	return cmd
 }
@@ -43,6 +47,19 @@ func newEvalCmd(state *rootState) *cobra.Command {
 func runEval(cmd *cobra.Command, state *rootState, bundle string, f evalFlags) error {
 	a, err := state.loadApp()
 	if err != nil {
+		return err
+	}
+
+	if f.graph {
+		_, err = eval.ReportGraph(cmd.Context(), a.Logger, cmd.OutOrStdout(), eval.GraphOptions{
+			Bundle:    bundle,
+			K:         f.limit,
+			SeedDepth: f.seedDepth,
+			Include:   a.Config.Indexing.Include,
+			Exclude:   a.Config.Indexing.Exclude,
+			Chunking:  chunk.ConfigFrom(a.Config.Chunking.TargetTokens, a.Config.Chunking.OverlapTokens),
+		})
+
 		return err
 	}
 

@@ -45,6 +45,14 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   `resolved:false`; neighbors honor the `[security].visibility.deny` boundary.
   Backed by a new `idx_links_dst_doc` index so inbound lookups no longer scan the
   whole links table.
+- Graph-answerability eval (`mnemos eval <bundle> --graph`): reads a curated
+  `cases.json` and measures whether 1-hop link-neighborhood injection surfaces the
+  answer document that plain lexical search misses, reporting direct hit@K,
+  neighbor inclusion, lift, and recovered-misses. Ships with the
+  `examples/graph-answerability` bundle. This is the instrument that must justify
+  read/context neighborhood injection before it is built; the existing held-out
+  eval cannot, because injection does not change ranking. Also adds neighbor-query
+  and read-vs-read+inject benchmarks for the injection cost side.
 - Move (`mv`/`mnemos.move`) un-indexes old URIs before the on-disk rename, so a
   failure never leaves phantom URIs in the index; directory moves are best-effort
   and report an aggregated error, and the count of orphaned inbound links is

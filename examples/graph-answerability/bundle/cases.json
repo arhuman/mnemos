@@ -1,0 +1,30 @@
+{
+  "description": "Graph-answerability cases: each query's lexical match is a hub/overview doc, but the actual answer lives in a linked detail doc written with different vocabulary. Measures whether 1-hop link-graph neighborhood injection surfaces the answer doc that plain lexical search misses. Queries are keyword-style on purpose: the default lexical retriever quotes each token and ANDs them, so a full natural-language question with stopwords (where/how/are) returns nothing. That is itself part of the finding: injection's value is conditional on search finding the hub.",
+  "cases": [
+    {
+      "query": "production deploy",
+      "expected_uri": "runbooks/revert-release.md",
+      "note": "1-hop: deploys/overview.md is the lexical hit and links to the answer"
+    },
+    {
+      "query": "escalation policy",
+      "expected_uri": "policies/paging-tiers.md",
+      "note": "1-hop: oncall/overview.md is the lexical hit and links to the answer"
+    },
+    {
+      "query": "database backups",
+      "expected_uri": "runbooks/snapshot-cron.md",
+      "note": "1-hop: data/overview.md is the lexical hit and links to the answer"
+    },
+    {
+      "query": "secrets stored",
+      "expected_uri": "security/secrets.md",
+      "note": "control: the answer doc is the direct lexical hit, so injection adds no lift here"
+    },
+    {
+      "query": "noisy neighbor",
+      "expected_uri": "runbooks/throttle-tenant.md",
+      "note": "2-hop ceiling: reachable only via overview -> isolation -> runbook, so 1-hop injection is expected to miss it"
+    }
+  ]
+}

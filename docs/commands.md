@@ -11,6 +11,7 @@ Every `mnemos` CLI command. Note the spelling split: `mnemos.search` (dot) is th
 | `mnemos ls [path] [--collection --type --tree --depth --all --indexed --unindexed --limit --json]` | List/browse the OKF tree, annotated with index metadata |
 | `mnemos related <uri> [--direction --limit --json]` | List a document's 1-hop link-graph neighbors (outbound links and inbound backlinks) |
 | `mnemos eval <okf-bundle> [--baseline <f> --save --semantic --limit N]` | Retrieval-quality eval on an OKF bundle (`--semantic` evaluates the hybrid retriever) |
+| `mnemos eval <bundle> --graph [--limit K --seed-depth N]` | Graph-answerability eval: reads `<bundle>/cases.json` and measures link-neighborhood inclusion vs plain lexical search (direct hit@K, neighbor inclusion, lift) |
 | `mnemos watch <path> --collection <c>` | Watch and incrementally reindex |
 | `mnemos serve` | Run the MCP server (stdio) |
 | `mnemos status` | Show storage path, counts, and FTS availability |
