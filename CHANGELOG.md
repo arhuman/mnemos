@@ -45,6 +45,11 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   `resolved:false`; neighbors honor the `[security].visibility.deny` boundary.
   Backed by a new `idx_links_dst_doc` index so inbound lookups no longer scan the
   whole links table.
+- Opt-in link-neighborhood injection: `mnemos.read` and `mnemos.context` accept
+  `follow_links` (plus `link_limit` / `link_direction`) to attach a document's
+  1-hop neighbors to the response. Off by default and best-effort (it never fails
+  an otherwise-successful read/context); context computes neighbors once per
+  document across the result set. Justified by the graph-answerability eval below.
 - Graph-answerability eval (`mnemos eval <bundle> --graph`): reads a curated
   `cases.json` and measures whether 1-hop link-neighborhood injection surfaces the
   answer document that plain lexical search misses, reporting direct hit@K,

@@ -91,6 +91,29 @@ func (s *Service) Related(ctx context.Context, uri string, dir Direction, limit 
 	return res, nil
 }
 
+// neighborsFor returns the flattened 1-hop neighbors (outbound then inbound) of
+// uri for link injection, honoring visibility and the per-direction cap. It is
+// the shared path behind read/context follow_links and is best-effort: a uri that
+// resolves to no visible document, or any lookup error, yields nil rather than
+// failing the surrounding read/context call.
+func (s *Service) neighborsFor(ctx context.Context, uri string, dir Direction, limit int) []RelatedNeighbor {
+	if uri == "" {
+		return nil
+	}
+	res, err := s.Related(ctx, uri, dir, limit)
+	if err != nil {
+		return nil
+	}
+	out := make([]RelatedNeighbor, 0, len(res.Outbound)+len(res.Inbound))
+	out = append(out, res.Outbound...)
+	out = append(out, res.Inbound...)
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
+}
+
 // visibleNeighbors drops neighbors in hidden collections and caps the result to
 // limit, preserving the storage-layer ordering. A dangling outbound neighbor has
 // an empty collection, which is never hidden, so it is kept.

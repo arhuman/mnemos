@@ -31,6 +31,10 @@ type ReadResult struct {
 	Content    string
 	Truncated  bool
 	Citation   *Citation
+	// Neighbors is the document's 1-hop link neighborhood, populated only when
+	// ReadOptions.FollowLinks is set. Empty when the document has no visible
+	// neighbors.
+	Neighbors []RelatedNeighbor
 }
 
 // ReadOptions narrows and bounds a read. Section and Lines scope a document read
@@ -47,6 +51,13 @@ type ReadOptions struct {
 	Lines     string
 	MaxChars  int
 	MaxTokens int
+	// FollowLinks, when set, attaches the read document's 1-hop link neighborhood
+	// to the result (best-effort: it never fails an otherwise-successful read).
+	FollowLinks bool
+	// LinkLimit caps neighbors per direction when FollowLinks is set (0 = default).
+	LinkLimit int
+	// LinkDirection selects which edges to follow (empty = both).
+	LinkDirection Direction
 }
 
 // hiddenCollection reports whether collection is on the server-side visibility
@@ -228,6 +239,10 @@ func (s *Service) ReadOneOpts(ctx context.Context, uri, chunkID string, opts Rea
 	}
 
 	res.Content, res.Truncated = truncateContent(res.Content, charBudget(opts.MaxChars, opts.MaxTokens))
+
+	if opts.FollowLinks {
+		res.Neighbors = s.neighborsFor(ctx, res.URI, opts.LinkDirection, opts.LinkLimit)
+	}
 
 	return res, nil
 }

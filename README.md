@@ -283,8 +283,9 @@ commands). Note the spelling: `mnemos.search` is the **MCP tool** Claude calls;
 ### Query (read-only, no gate)
 
 - **`mnemos.search`**: ranked, filtered retrieval with citations.
-- **`mnemos.read`**: read a precise chunk (by `chunk_id`) or a whole document (by `uri`).
-- **`mnemos.context`**: top-k results as LLM-ready context blocks (`uri:start-end` → content).
+- **`mnemos.read`**: read a precise chunk (by `chunk_id`) or a whole document (by `uri`). Pass `follow_links: true` to also attach the document's 1-hop link neighbors.
+- **`mnemos.context`**: top-k results as LLM-ready context blocks (`uri:start-end` → content). Pass `follow_links: true` to attach each block document's 1-hop link neighbors.
+- **`mnemos.related`**: the link-graph neighbors of a document, its outbound links and inbound backlinks (1 hop, document-level). Dangling outbound targets are returned with `resolved: false`. Filter with `direction` (outbound/inbound/both) and `limit`.
 - **`mnemos.list`**: walk the OKF tree on disk and annotate each file with index metadata (title, type, tags, collection) plus an `indexed` flag, so both stored and not-yet-indexed files are visible. Filter by `path`, `collection`, `type`, or indexed state.
 
 ### Write (requires `allow_write = true`)
