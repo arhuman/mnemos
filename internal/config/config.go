@@ -47,6 +47,16 @@ type ChunkingConfig struct {
 type SearchConfig struct {
 	DefaultLimit int  `koanf:"default_limit"`
 	UseVectors   bool `koanf:"use_vectors"`
+	// GraphExpansion enables link-neighbor expansion: when a query under-fills the
+	// limit, the top hits' 1-hop link neighbors fill the remaining slots. Off by
+	// default; it never reorders base results, so ranking cannot regress.
+	GraphExpansion bool `koanf:"graph_expansion"`
+	// GraphSeedDepth is how many top hits graph expansion pulls neighbors from
+	// (0 = built-in default).
+	GraphSeedDepth int `koanf:"graph_seed_depth"`
+	// GraphDecay scales a seed's score for its injected neighbors, in (0,1]
+	// (0 = built-in default).
+	GraphDecay float64 `koanf:"graph_decay"`
 }
 
 // MCPConfig configures the MCP server surface.
@@ -111,6 +121,13 @@ overlap_tokens = 80
 [search]
 default_limit = 12
 use_vectors = false
+# Link-neighbor expansion: when a query under-fills the limit, fill the remaining
+# slots with the top hits' 1-hop link neighbors. Off by default; it never reorders
+# base results, so ranking cannot regress. seed_depth = top hits expanded,
+# decay = score scale applied to a seed's neighbors.
+graph_expansion = false
+graph_seed_depth = 3
+graph_decay = 0.5
 
 [mcp]
 transport = "stdio"
