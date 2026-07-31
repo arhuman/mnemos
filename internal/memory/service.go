@@ -102,6 +102,9 @@ type ContextBlock struct {
 	ModifiedAt string
 	Content    string
 	Truncated  bool
+	// Neighbors is the block document's 1-hop link neighborhood, populated only
+	// when ContextOptions.FollowLinks is set.
+	Neighbors []RelatedNeighbor
 }
 
 // ContextOptions shape a Context call. The zero value reproduces the original
@@ -114,6 +117,14 @@ type ContextOptions struct {
 	Cliff           bool
 	MaxChars        int
 	MaxTokens       int
+	// FollowLinks, when set, attaches each block document's 1-hop link
+	// neighborhood to the block (best-effort). Neighbors are computed once per
+	// document across the result set.
+	FollowLinks bool
+	// LinkLimit caps neighbors per direction when FollowLinks is set (0 = default).
+	LinkLimit int
+	// LinkDirection selects which edges to follow (empty = both).
+	LinkDirection Direction
 }
 
 // groupCandidateFactor is how many chunks Context over-fetches per requested
@@ -165,6 +176,12 @@ func (s *Service) ContextWithOptions(ctx context.Context, r search.Retriever, q 
 	}
 
 	budget := charBudget(opts.MaxChars, opts.MaxTokens)
+	// Neighbors are per-document, so compute them once per uri and reuse across a
+	// document's chunks (relevant in group_by=chunk mode).
+	var linkCache map[string][]RelatedNeighbor
+	if opts.FollowLinks {
+		linkCache = make(map[string][]RelatedNeighbor)
+	}
 	blocks := make([]ContextBlock, 0, len(results))
 	for _, res := range results {
 		content, ok := contents[res.ID]
@@ -172,14 +189,23 @@ func (s *Service) ContextWithOptions(ctx context.Context, r search.Retriever, q 
 			content = res.Snippet
 		}
 		content, truncated := truncateContent(content, budget)
-		blocks = append(blocks, ContextBlock{
+		block := ContextBlock{
 			Source:     fmt.Sprintf("%s:%d-%d", res.URI, res.StartLine, res.EndLine),
 			Title:      res.Title,
 			Collection: res.Collection,
 			ModifiedAt: res.ModifiedAt,
 			Content:    content,
 			Truncated:  truncated,
-		})
+		}
+		if opts.FollowLinks {
+			nb, seen := linkCache[res.URI]
+			if !seen {
+				nb = s.neighborsFor(ctx, res.URI, opts.LinkDirection, opts.LinkLimit)
+				linkCache[res.URI] = nb
+			}
+			block.Neighbors = nb
+		}
+		blocks = append(blocks, block)
 	}
 
 	return blocks, nil
