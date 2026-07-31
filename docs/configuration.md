@@ -28,6 +28,9 @@ overlap_tokens = 80
 [search]
 default_limit = 12
 use_vectors = false         # true => hybrid lexical+vector search (needs the embed build + a model)
+graph_expansion = false     # true => fill empty result slots with the top hits' 1-hop link neighbors
+graph_seed_depth = 3        # how many top hits graph expansion pulls neighbors from
+graph_decay = 0.5           # score scale applied to a seed's injected neighbors (0,1]
 
 [mcp]
 transport = "stdio"

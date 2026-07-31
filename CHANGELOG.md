@@ -45,6 +45,16 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   `resolved:false`; neighbors honor the `[security].visibility.deny` boundary.
   Backed by a new `idx_links_dst_doc` index so inbound lookups no longer scan the
   whole links table.
+- Graph-assisted retrieval (`[search] graph_expansion`, off by default): a
+  `GraphRetriever` wraps the lexical/hybrid retriever and, when a query
+  under-fills the limit, fills the empty slots with the top hits' 1-hop link
+  neighbors (decayed seed score, first-chunk citation). It never reorders or
+  evicts base results, so ranking metrics cannot regress; it respects the
+  visibility deny list and skips dangling targets. Tunable via `graph_seed_depth`
+  and `graph_decay`. Gated by eval: `mnemos eval <bundle> --graph-expansion`
+  measures held-out Hit@1/Recall/MRR with expansion on (flat on git-recipes), and
+  `mnemos eval --graph` now reports the actual GraphRetriever hit@K (0.20 -> 0.80
+  on the graph-answerability bundle).
 - Opt-in link-neighborhood injection: `mnemos.read` and `mnemos.context` accept
   `follow_links` (plus `link_limit` / `link_direction`) to attach a document's
   1-hop neighbors to the response. Off by default and best-effort (it never fails

@@ -39,6 +39,12 @@ type Options struct {
 	Semantic bool
 	// ModelDir is the embedding model directory used when Semantic is true.
 	ModelDir string
+	// GraphExpansion, when true, wraps the retriever with link-neighbor expansion,
+	// so the held-out metrics measure the effect of Phase 2 (the gate: recall up,
+	// Hit@1/MRR not down). Seed depth / decay default when their fields are unset.
+	GraphExpansion bool
+	GraphSeedDepth int
+	GraphDecay     float64
 }
 
 // Run executes the full held-out evaluation: derive example-query pairs, build a
@@ -129,6 +135,20 @@ func Run(ctx context.Context, logger *slog.Logger, opts Options) (Metrics, error
 // the held-out corpus into the temp database and returns a hybrid retriever, so
 // the same metrics can be recomputed to check semantic beats the FTS baseline.
 func buildRetriever(ctx context.Context, db *sql.DB, logger *slog.Logger, opts Options) (search.Retriever, error) {
+	base, err := buildBaseRetriever(ctx, db, logger, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.GraphExpansion {
+		return search.NewGraphRetriever(base, db, opts.GraphSeedDepth, opts.GraphDecay, logger), nil
+	}
+
+	return base, nil
+}
+
+// buildBaseRetriever returns the lexical or hybrid retriever before any
+// graph-expansion wrapping.
+func buildBaseRetriever(ctx context.Context, db *sql.DB, logger *slog.Logger, opts Options) (search.Retriever, error) {
 	engine := search.NewEngine(db, logger)
 	if !opts.Semantic {
 		return engine, nil

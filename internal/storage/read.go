@@ -148,6 +148,32 @@ func GetChunksByDocURI(ctx context.Context, db *sql.DB, uri string) ([]model.Chu
 	return chunks, nil
 }
 
+// FirstChunkByDocURI returns the lowest-ordinal chunk of the document at uri, or
+// (nil, nil) when the document has no chunks. It is the representative chunk that
+// graph expansion cites for a neighbor document which did not match the query
+// lexically, so the injected result still carries a real citation.
+func FirstChunkByDocURI(ctx context.Context, db *sql.DB, uri string) (*model.Chunk, error) {
+	row := db.QueryRowContext(ctx, `
+		SELECT c.id, c.document_id, c.ordinal, c.heading_path, c.content,
+		       c.tags, c.doc_type, c.token_count, c.start_line, c.end_line, c.metadata_json
+		FROM chunks c
+		JOIN documents d ON d.id = c.document_id
+		WHERE d.uri = ?
+		ORDER BY c.ordinal
+		LIMIT 1
+	`, uri)
+
+	c, err := scanChunk(row)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil //nolint:nilnil // documented not-found result: (nil, nil) means the document has no chunks
+	case err != nil:
+		return nil, fmt.Errorf("storage: first chunk for %q: %w", uri, err)
+	default:
+		return c, nil
+	}
+}
+
 // scanner abstracts *sql.Row and *sql.Rows so the scan helpers serve both the
 // single-row and multi-row accessors.
 type scanner interface {

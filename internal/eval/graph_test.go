@@ -56,6 +56,10 @@ func TestRunGraphInclusionShowsLift(t *testing.T) {
 	require.Greater(t, m.Lift, 0.0, "injection should lift answerability")
 	require.Greater(t, m.RecoveredMisses, 0.0, "injection should recover some search misses")
 
+	// The actual GraphRetriever must realize the proxy: graph hit@K beats plain
+	// direct hit@K, confirming Phase 2 recovers link-only answers.
+	require.Greater(t, m.GraphHitAtK, m.DirectHitAtK, "graph retriever should beat plain search")
+
 	byURI := make(map[string]GraphCaseResult, len(results))
 	for _, r := range results {
 		byURI[r.ExpectedURI] = r

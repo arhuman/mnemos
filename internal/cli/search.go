@@ -87,6 +87,23 @@ func runSearch(cmd *cobra.Command, state *rootState, args []string, f searchFlag
 // installed, prints a warning to stderr and degrades to lexical-only rather than
 // failing, honoring the "useful without embeddings" design principle.
 func buildRetriever(cmd *cobra.Command, a *app.App, semantic bool) (search.Retriever, error) {
+	base, err := buildBaseRetriever(cmd, a, semantic)
+	if err != nil {
+		return nil, err
+	}
+	if a.Config.Search.GraphExpansion {
+		return search.NewGraphRetriever(base, a.DB, a.Config.Search.GraphSeedDepth, a.Config.Search.GraphDecay, a.Logger), nil
+	}
+
+	return base, nil
+}
+
+// buildBaseRetriever returns the lexical or hybrid retriever before any
+// graph-expansion wrapping. Without --semantic it is the lexical FTS engine. With
+// --semantic it fuses lexical and vector retrieval via RRF, degrading to lexical
+// (with a stderr warning) when the binary lacks embedding support or no model is
+// installed, honoring the "useful without embeddings" design principle.
+func buildBaseRetriever(cmd *cobra.Command, a *app.App, semantic bool) (search.Retriever, error) {
 	engine := search.NewEngine(a.DB, a.Logger)
 	if !semantic {
 		return engine, nil

@@ -67,6 +67,10 @@ type GraphMetrics struct {
 	NeighborInclusion float64 `json:"neighbor_inclusion"`
 	Lift              float64 `json:"lift"`
 	RecoveredMisses   float64 `json:"recovered_misses"`
+	// GraphHitAtK is the fraction of cases where the actual GraphRetriever (base +
+	// link expansion) returns the expected document in its top-K. It is the real
+	// Phase 2 measurement; NeighborInclusion is the raw-neighborhood proxy above.
+	GraphHitAtK float64 `json:"graph_hit_at_k"`
 }
 
 // GraphCaseResult is the per-case outcome, surfaced so the report and tests can
@@ -76,6 +80,7 @@ type GraphCaseResult struct {
 	ExpectedURI string
 	DirectHit   bool
 	Included    bool
+	GraphHit    bool
 	Seeds       []string
 }
 
@@ -133,16 +138,36 @@ func RunGraphInclusion(ctx context.Context, logger *slog.Logger, opts GraphOptio
 	defer cleanup()
 
 	retriever := search.NewEngine(db, logger)
+	graphRetriever := search.NewGraphRetriever(retriever, db, seedDepth, 0, logger)
 	results := make([]GraphCaseResult, 0, len(cases))
 	for _, c := range cases {
 		hits, err := retriever.Search(ctx, search.Query{Text: c.Query, Limit: k})
 		if err != nil {
 			return GraphMetrics{}, nil, fmt.Errorf("eval: graph search %q: %w", c.Query, err)
 		}
-		results = append(results, evalGraphCase(ctx, db, c, hits, seedDepth))
+		r := evalGraphCase(ctx, db, c, hits, seedDepth)
+
+		graphHits, err := graphRetriever.Search(ctx, search.Query{Text: c.Query, Limit: k})
+		if err != nil {
+			return GraphMetrics{}, nil, fmt.Errorf("eval: graph-retriever search %q: %w", c.Query, err)
+		}
+		r.GraphHit = containsURI(graphHits, c.ExpectedURI)
+
+		results = append(results, r)
 	}
 
 	return computeGraph(results, k, seedDepth), results, nil
+}
+
+// containsURI reports whether any result belongs to uri.
+func containsURI(results []model.Result, uri string) bool {
+	for _, r := range results {
+		if r.URI == uri {
+			return true
+		}
+	}
+
+	return false
 }
 
 // evalGraphCase scores one case: whether the expected doc is a direct top-K hit,
@@ -208,7 +233,7 @@ func computeGraph(results []GraphCaseResult, k, seedDepth int) GraphMetrics {
 	if len(results) == 0 {
 		return m
 	}
-	var directHits, included, misses, recovered int
+	var directHits, included, graphHits, misses, recovered int
 	for _, r := range results {
 		if r.DirectHit {
 			directHits++
@@ -221,10 +246,14 @@ func computeGraph(results []GraphCaseResult, k, seedDepth int) GraphMetrics {
 		if r.Included {
 			included++
 		}
+		if r.GraphHit {
+			graphHits++
+		}
 	}
 	n := float64(len(results))
 	m.DirectHitAtK = float64(directHits) / n
 	m.NeighborInclusion = float64(included) / n
+	m.GraphHitAtK = float64(graphHits) / n
 	m.Lift = m.NeighborInclusion - m.DirectHitAtK
 	if misses > 0 {
 		m.RecoveredMisses = float64(recovered) / float64(misses)
@@ -289,8 +318,9 @@ func ReportGraph(ctx context.Context, logger *slog.Logger, out io.Writer, opts G
 func writeGraphReport(out io.Writer, m GraphMetrics, cases []GraphCaseResult) {
 	_, _ = fmt.Fprintf(out, "graph-answerability  (N=%d, K=%d, seed_depth=%d)\n", m.N, m.K, m.SeedDepth)
 	_, _ = fmt.Fprintf(out, "  direct hit@K        %.2f  (plain lexical search)\n", m.DirectHitAtK)
-	_, _ = fmt.Fprintf(out, "  neighbor inclusion  %.2f  (search + 1-hop neighborhood)\n", m.NeighborInclusion)
-	_, _ = fmt.Fprintf(out, "  lift                %+.2f  (value added by injection)\n", m.Lift)
+	_, _ = fmt.Fprintf(out, "  neighbor inclusion  %.2f  (search + 1-hop neighborhood, proxy)\n", m.NeighborInclusion)
+	_, _ = fmt.Fprintf(out, "  graph hit@K         %.2f  (actual GraphRetriever, base + expansion)\n", m.GraphHitAtK)
+	_, _ = fmt.Fprintf(out, "  lift                %+.2f  (neighbor inclusion over direct hit)\n", m.Lift)
 	_, _ = fmt.Fprintf(out, "  recovered misses    %.2f  (of search misses, share injection recovers)\n", m.RecoveredMisses)
 	if len(cases) == 0 {
 		return
