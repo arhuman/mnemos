@@ -25,7 +25,7 @@ require (
 	github.com/sugarme/tokenizer v0.3.0
 	github.com/yuin/goldmark v1.8.4
 	golang.org/x/sync v0.22.0
-	modernc.org/sqlite v1.54.0
+	modernc.org/sqlite v1.55.0
 )
 
 require (
