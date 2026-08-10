@@ -1,0 +1,22 @@
+commit-msg:
+  commands:
+    # Dependency-free Conventional Commits check matching release.sh regex.
+    # Validates commit message subject against: type(scope)?: description
+    conventional-commits:
+      glob: ""
+      run: |
+        msg=$(head -1 "{1}")
+        pattern='^[a-z]+(\([^)]*\))?!?:'
+        if ! echo "$msg" | grep -qE "$pattern"; then
+          echo "Commit message violates Conventional Commits format: '$msg'"
+          echo ""
+          echo "Expected format: type(scope)?: description"
+          echo "Valid types: feat, fix, docs, chore, test, refactor, build, perf, ci, style"
+          echo ""
+          echo "Examples:"
+          echo "  feat: add new feature"
+          echo "  feat(scope): add new feature with scope"
+          echo "  fix(cli): resolve issue"
+          echo "  docs: update README"
+          exit 1
+        fi

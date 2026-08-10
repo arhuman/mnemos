@@ -25,7 +25,7 @@ BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VPKG       := github.com/arhuman/mnemos/internal/version
 LDFLAGS    := -ldflags "-X $(VPKG).Version=$(VERSION) -X $(VPKG).GitCommit=$(COMMIT) -X $(VPKG).BuildDate=$(BUILD_DATE)"
 
-.PHONY: build build-embed test bench bench-smoke cover tidy audit tools install install-embed install-skill install-hooks demo demo-check clean help
+.PHONY: build build-embed test bench bench-smoke cover tidy audit ci tools install install-embed install-skill install-hooks git-hooks demo demo-check clean help release
 
 # First target is the default (`make` == `make build`).
 ## build: compile the single binary (cgo-free) into bin/
@@ -87,6 +87,14 @@ audit:
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
 	$(MAKE) cover
 
+## ci: run full CI checks locally (build, vet, mod verify, lint, vuln, coverage gate)
+ci: build build-embed
+	go vet ./...
+	go mod verify
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION) run
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	$(MAKE) cover
+
 ## install: install the binary into GOBIN (cgo-free)
 install:
 	CGO_ENABLED=0 go install $(LDFLAGS) $(CMD)
@@ -118,6 +126,12 @@ else
 	@echo "SKIP_HOOKS set -> leaving $(CLAUDE_SETTINGS) untouched"
 endif
 
+## git-hooks: install git commit hooks via lefthook (enforces Conventional Commits locally)
+git-hooks:
+	@command -v lefthook >/dev/null || { echo "lefthook not found: install with 'go install github.com/evilmartians/lefthook@latest' or 'brew install lefthook'"; exit 1; }
+	@lefthook install
+	@echo "git hooks installed from lefthook.yml"
+
 ## demo: render the README demo GIFs from the VHS tapes (needs vhs + mnemos on PATH; demo-mcp also needs claude)
 demo:
 	@which vhs > /dev/null || { echo "vhs not found: install github.com/charmbracelet/vhs"; exit 1; }
@@ -131,6 +145,10 @@ demo-check:
 ## clean: remove build artifacts
 clean:
 	rm -rf $(BIN_DIR) $(COVER_OUT) $(COVER_HTML)
+
+## release: cut a release (derives semver from commits, gates on make ci, stamps CHANGELOG.md, tags, pushes)
+release:
+	@./scripts/release.sh
 
 ## help: list available targets
 help:

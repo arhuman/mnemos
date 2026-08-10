@@ -364,6 +364,7 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 ## Security
 
 - No network, no telemetry; the MCP server is stdio-only.
+- Shipped binaries carry SBOMs (generated with syft) and are signed with cosign (keyless OIDC).
 - Read-only by default. Write-back is opt-in (`allow_write = true`). Destructive operations (forget, move) require a separate opt-in (`allow_delete = true`).
 - All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the tree root, symlink escapes, access to `.mnemos/`, and `[security].exclude` globs are all rejected.
 - Captured content is secret-scanned before it is written or indexed.

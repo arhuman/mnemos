@@ -13,6 +13,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  commit-format:
+    name: commit format (dependency-free commitlint equivalent)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check Conventional Commits format in PR
+        run: |
+          # Regex pattern: type(scope)?: subject (matches release.sh)
+          pattern='^[a-z]+(\([^)]*\))?!?:'
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+
+          # Get all commits in the PR, excluding merge commits
+          commits=$(git log --no-merges --format='%H %s' "$base..$head")
+
+          if [ -z "$commits" ]; then
+            echo "No commits found in range $base..$head"
+            exit 0
+          fi
+
+          failed=0
+          while IFS= read -r commit_hash subject; do
+            if ! echo "$subject" | grep -qE "$pattern"; then
+              echo "::error::Commit $commit_hash violates Conventional Commits: '$subject'"
+              failed=1
+            fi
+          done <<< "$commits"
+
+          if [ $failed -eq 1 ]; then
+            echo ""
+            echo "All commits must follow Conventional Commits format:"
+            echo "  type(scope)?: description"
+            echo ""
+            echo "Valid types: feat, fix, docs, chore, test, refactor, build, perf, ci, style"
+            exit 1
+          fi
+
   test:
     name: test (go ${{ matrix.go }})
     runs-on: ubuntu-latest

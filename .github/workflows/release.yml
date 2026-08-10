@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   goreleaser:
@@ -19,6 +20,8 @@ jobs:
           # Build shipped binaries with the latest stable Go so they carry all
           # runtime/stdlib security fixes, independent of the go.mod floor.
           go-version: stable
+      - uses: sigstore/cosign-installer@v3
+      - uses: anchore/sbom-action/download-syft@v0
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
