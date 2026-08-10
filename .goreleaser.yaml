@@ -39,6 +39,21 @@ archives:
 checksum:
   name_template: checksums.txt
 
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+      - --yes
+    artifacts: checksum
+
 changelog:
   use: github
   sort: asc

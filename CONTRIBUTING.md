@@ -14,6 +14,7 @@ quality bar, and how to get a change merged.
 git clone https://github.com/arhuman/mnemos.git && cd mnemos
 make build        # cgo-free binary -> bin/mnemos
 make test         # go test -race ./...
+make git-hooks    # install local git commit-msg hook (enforces Conventional Commits)
 ```
 
 Useful targets (`make help` lists them all):
@@ -73,8 +74,9 @@ Before opening a PR:
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/)
 (`feat:`, `fix:`, `docs:`, `build:`, `ci:`, `refactor:`, `test:`, `chore:`),
-enforced by commitlint. Keep commits atomic and focused. Use a `!` or a
-`BREAKING CHANGE:` footer for breaking changes.
+enforced in CI and locally via git commit-msg hook (set up with `make git-hooks`).
+Keep commits atomic and focused. Use a `!` or a `BREAKING CHANGE:` footer for
+breaking changes.
 
 ## Architecture
 
