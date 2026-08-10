@@ -37,7 +37,10 @@ jobs:
           fi
 
           failed=0
-          while IFS= read -r commit_hash subject; do
+          # IFS must stay at a space: an empty IFS disables field splitting, so
+          # commit_hash would swallow the whole "<sha> <subject>" line and every
+          # commit would be checked against an empty subject.
+          while IFS=' ' read -r commit_hash subject; do
             if ! echo "$subject" | grep -qE "$pattern"; then
               echo "::error::Commit $commit_hash violates Conventional Commits: '$subject'"
               failed=1
