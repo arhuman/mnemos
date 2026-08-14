@@ -74,7 +74,20 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   surfaced to the caller. See ADR 0004.
 - CLI: `init`, `ingest`, `search`, `ls`, `related`, `eval`, `watch`, `serve`,
   `status`, `version`, `models install`, `reindex`, `validate`, `task list`,
-  `forget`, `mv`, `okfy`.
+  `forget`, `mv`, `okfy`, `edit`.
+- `mnemos edit <uri>` opens an OKF document in a three-pane terminal editor
+  (bubbletea): navigate the link graph (outbound links, backlinks, semantically
+  similar documents), cycle enum frontmatter fields with schema awareness, retype
+  tag lists, and edit the body in `$EDITOR`. Saving reindexes the single document,
+  and navigating away from unsaved changes saves first. It is gated by
+  `[mcp].allow_write`. Frontmatter is patched positionally rather than remarshalled,
+  so key order, inline comments, blank lines and quoting styles survive an edit
+  byte for byte. Embeddings are not recomputed on save; the status bar says so.
+  `m` moves or renames the open document (same `[mcp].allow_delete` gate as
+  `mnemos mv`): it saves through the navigation gate, prompts for the new path,
+  and `tab` opens a fuzzy-filtered picker of the directories that already hold
+  documents. The editor reopens at the new uri and reports any inbound links left
+  pointing at the old path.
 - `reindex --content` re-parses and rewrites every already-indexed document from
   its on-disk file, bypassing the unchanged-file content-hash skip, so a parser or
   schema change (e.g. the frontmatter-title fix) propagates to the whole index

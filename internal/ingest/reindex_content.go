@@ -2,12 +2,20 @@ package ingest
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/storage"
 )
+
+// errReindexWrite tags a reindex failure that happened while persisting a
+// prepared document, so a batch caller can tell a broken store (fatal) apart
+// from a single unreadable file (skippable).
+var errReindexWrite = errors.New("ingest: reindex write")
 
 // ReindexContentSummary reports the outcome of a content reindex.
 type ReindexContentSummary struct {
@@ -46,12 +54,11 @@ func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.
 			return sum, err
 		}
 		abs := filepath.Join(kbRoot, filepath.FromSlash(d.URI))
-		r, err := p.prepare(ctx, scanned{absPath: abs, uri: d.URI}, Options{
-			Collection: d.Collection,
-			Chunking:   cfg,
-			Force:      true,
-		})
+		r, err := p.reindexFile(ctx, abs, d.URI, d.Collection, cfg)
 		if err != nil {
+			if errors.Is(err, errReindexWrite) {
+				return sum, err
+			}
 			// A vanished or unreadable file must not abort the whole pass; leave its
 			// row in place and keep going.
 			p.logger.Warn("reindex skip: file unreadable", "uri", d.URI, "error", err)
@@ -64,12 +71,59 @@ func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.
 
 			continue
 		}
-		if err := p.write(ctx, r); err != nil {
-			return sum, fmt.Errorf("ingest: reindex write %q: %w", d.URI, err)
-		}
 		sum.Reindexed++
 		sum.Chunks += len(r.chunks)
 	}
 
 	return sum, nil
+}
+
+// reindexFile force-prepares one file and, unless prepare declined it, writes
+// it. Forcing bypasses the content-hash skip, so an unchanged file is still
+// re-parsed and rewritten. A prepare failure is returned unwrapped (the caller
+// decides whether one unreadable file aborts the pass); a write failure is
+// tagged with errReindexWrite.
+func (p *Pipeline) reindexFile(ctx context.Context, absPath, uri, collection string, cfg chunk.Config) (result, error) {
+	r, err := p.prepare(ctx, scanned{absPath: absPath, uri: uri}, Options{
+		Collection: collection,
+		Chunking:   cfg,
+		Force:      true,
+	})
+	if err != nil {
+		return result{}, err
+	}
+	if r.skip {
+		return r, nil
+	}
+	if err := p.write(ctx, r); err != nil {
+		return result{}, fmt.Errorf("%w %q: %w", errReindexWrite, uri, err)
+	}
+
+	return r, nil
+}
+
+// ReindexOne re-parses and rewrites a single file, always forcing, and returns
+// its document id and chunk count. Unlike IngestPath it never short-circuits on
+// an unchanged content hash: it backs an editor's save, where "the index now
+// reflects this file" must hold even when the saved bytes happen to match what
+// was already indexed. A file prepare declines (binary, oversize, unparseable)
+// is an error here rather than a silent skip, because the caller asked for this
+// one file by name.
+func (p *Pipeline) ReindexOne(ctx context.Context, absPath, uri, collection string, cfg chunk.Config) (docID string, chunks int, err error) {
+	r, err := p.reindexFile(ctx, absPath, uri, collection, cfg)
+	if err != nil {
+		return "", 0, err
+	}
+	if r.skip {
+		return "", 0, fmt.Errorf("ingest: reindex %q: not indexable (binary, oversize, or unparseable)", uri)
+	}
+
+	return r.doc.ID, len(r.chunks), nil
+}
+
+// ReindexOne performs a one-shot forced reindex of a single explicit file,
+// mirroring File's wrapper shape over the pipeline. absPath is the file to read;
+// uri is the stable, tree-root-relative identifier stored as documents.uri.
+func ReindexOne(ctx context.Context, db *sql.DB, logger *slog.Logger, absPath, uri, collection string, cfg chunk.Config) (docID string, chunks int, err error) {
+	return New(db, logger).ReindexOne(ctx, absPath, uri, collection, cfg)
 }

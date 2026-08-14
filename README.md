@@ -293,6 +293,8 @@ commands). Note the spelling: `mnemos.search` is the **MCP tool** Claude calls;
 - **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the OKF tree instead of auto-naming under `[capture].dir`. Content is **secret-scanned** before it is written and indexed.
 - **`mnemos.okfy`**: convert an existing `.txt`/`.md` file in the tree into an OKF document (frontmatter + body) at `out` (defaults to the source path with a `.md` extension) and index it, leaving the source intact. The source body is **secret-scanned** first.
 
+`mnemos edit <uri>` is the human counterpart: a terminal editor for one document, gated by the same `allow_write` flag, with no MCP tool of its own. See [Edit documents interactively](#edit-documents-interactively).
+
 ### Manage (requires `allow_delete = true`)
 
 - **`mnemos.forget`**: remove a file from the OKF tree and de-index it; idempotent.
@@ -318,6 +320,51 @@ If a watcher is running over the tree, `forget`/`move` operations are also seen 
 the watcher (redundant but idempotent); the tools update the index directly and
 work without a watcher. Set `[capture] defer_to_watcher = true` when a watcher
 covers `capture_dir` to avoid double indexation of remembered notes.
+
+## Edit documents interactively
+
+`mnemos edit <uri>` opens a terminal editor over one OKF document at a time,
+split into three panes:
+
+- **NAV**: the document's outbound links, inbound backlinks, and (once an
+  embed build has computed embeddings for the corpus) semantically similar
+  documents; otherwise that section shows an unavailable hint instead of
+  results.
+- **METADATA**: frontmatter fields, typed per the document's OKF `type`. A
+  known enum (a task's `status` or `priority`) cycles with the arrow keys,
+  `tags` is retyped as a whole list, unknown fields fall back to free text,
+  and index-owned fields like `type` are read-only.
+- **CONTENT**: the body, handed to `$EDITOR` for editing and reloaded on exit.
+
+```bash
+mnemos edit tasks/ship.md
+```
+
+Keys: `tab` focus, `↑↓` move, `enter` open/edit, `←→` cycle an enum, `e`
+`$EDITOR`, `m` move/rename, `s` save, `b`/backspace back, `q` quit. Saving
+writes the file first and then reindexes just that document, so an edit is
+never lost even if reindexing fails; frontmatter writes preserve the rest of
+the file (comments, key order, unrelated fields) instead of rewriting it.
+Navigating to another document while the current one is unsaved saves it first.
+
+`m` moves or renames the open document. It prompts with the current uri:
+edit it freely, or press `tab` for a fuzzy-filtered picker of the directories
+that already hold documents (`enter` relocates the filename under the picked
+one, `esc` returns to the prompt). Committing renames the file on disk,
+reindexes it under the new uri, and reopens the editor there; inbound links
+still pointing at the old path are reported, not rewritten. Like `mnemos mv`,
+it needs `[mcp].allow_delete = true` since the old index entries are deleted.
+
+It requires a uri: bare `mnemos edit` errors, there is no tree-browsing picker
+yet. It is gated the same way as `mnemos.remember`/`mnemos.okfy`:
+
+```toml
+[mcp]
+allow_write = true   # also gates mnemos edit
+```
+
+There is no matching MCP tool: `mnemos edit` is CLI-only, for a human at the
+keyboard.
 
 ## Semantic search (optional)
 

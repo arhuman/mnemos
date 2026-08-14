@@ -87,6 +87,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newReindexCmd(state))
 	root.AddCommand(newForgetCmd(state))
 	root.AddCommand(newMvCmd(state))
+	root.AddCommand(newEditCmd(state))
 	root.AddCommand(newOkfyCmd(state))
 	root.AddCommand(newValidateCmd(state))
 	root.AddCommand(newTaskCmd(state))

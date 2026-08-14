@@ -140,3 +140,48 @@ func TestAllChunkRefs(t *testing.T) {
 		{ID: "c1", Content: "beta"},
 	}, refs)
 }
+
+// TestDocChunkVectors covers the ordered per-document projection, the
+// empty-not-error case for a document with no embeddings, and the model filter.
+func TestDocChunkVectors(t *testing.T) {
+	db := testutil.NewDB(t)
+	seedChunks(t, db, []model.Chunk{
+		{ID: "c1", DocumentID: "d", Ordinal: 1, Content: "beta"},
+		{ID: "c0", DocumentID: "d", Ordinal: 0, Content: "alpha"},
+	})
+	upsertVec(t, db, "c0", []float32{1, 0})
+	upsertVec(t, db, "c1", []float32{0, 1})
+
+	got, err := storage.DocChunkVectors(context.Background(), db, "d", "m")
+	require.NoError(t, err)
+	require.Equal(t, []storage.ChunkVector{
+		{ChunkID: "c0", Vector: []float32{1, 0}},
+		{ChunkID: "c1", Vector: []float32{0, 1}},
+	}, got)
+
+	other, err := storage.DocChunkVectors(context.Background(), db, "missing", "m")
+	require.NoError(t, err)
+	require.Empty(t, other)
+
+	wrongModel, err := storage.DocChunkVectors(context.Background(), db, "d", "other")
+	require.NoError(t, err)
+	require.Empty(t, wrongModel)
+}
+
+// TestAnyEmbeddingModel covers both arms of the cheap availability probe.
+func TestAnyEmbeddingModel(t *testing.T) {
+	db := testutil.NewDB(t)
+	seedChunks(t, db, []model.Chunk{{ID: "c0", DocumentID: "d", Ordinal: 0, Content: "alpha"}})
+
+	name, found, err := storage.AnyEmbeddingModel(context.Background(), db)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Empty(t, name)
+
+	upsertVec(t, db, "c0", []float32{1, 0})
+
+	name, found, err = storage.AnyEmbeddingModel(context.Background(), db)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "m", name)
+}

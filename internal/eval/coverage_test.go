@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -134,4 +135,55 @@ func TestBuildRetrieverLexical(t *testing.T) {
 	r, err := buildRetriever(ctx, db, quietLogger(), Options{Semantic: false})
 	require.NoError(t, err)
 	require.NotNil(t, r)
+}
+
+// TestBuildRetrieverGraphExpansion asserts buildRetriever wraps the base
+// retriever in a GraphRetriever when Options.GraphExpansion is set.
+func TestBuildRetrieverGraphExpansion(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "graphexp.db")
+	db, err := storage.Open(ctx, dbPath)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	require.NoError(t, storage.Migrate(db))
+
+	r, err := buildRetriever(ctx, db, quietLogger(), Options{GraphExpansion: true, GraphSeedDepth: 3})
+	require.NoError(t, err)
+	require.NotNil(t, r)
+}
+
+// TestReportRunError asserts Report propagates a Run failure without
+// touching the baseline.
+func TestReportRunError(t *testing.T) {
+	var buf strings.Builder
+	baseline := filepath.Join(t.TempDir(), "baseline.json")
+
+	_, err := Report(context.Background(), quietLogger(), &buf, Options{
+		Bundle: filepath.Join(t.TempDir(), "does_not_exist"),
+	}, baseline, true)
+	require.Error(t, err)
+	require.NoFileExists(t, baseline)
+}
+
+// TestReportLoadBaselineError asserts Report propagates a malformed-baseline
+// decode error rather than silently ignoring it.
+func TestReportLoadBaselineError(t *testing.T) {
+	baseline := filepath.Join(t.TempDir(), "baseline.json")
+	require.NoError(t, os.WriteFile(baseline, []byte("{not json"), 0o644))
+
+	var buf strings.Builder
+	_, err := Report(context.Background(), quietLogger(), &buf, evalOptions(t), baseline, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "decode baseline")
+}
+
+// TestReportSaveBaselineError asserts Report propagates a saveBaseline
+// failure (target directory does not exist) when save is requested.
+func TestReportSaveBaselineError(t *testing.T) {
+	baseline := filepath.Join(t.TempDir(), "missing_dir", "baseline.json")
+
+	var buf strings.Builder
+	_, err := Report(context.Background(), quietLogger(), &buf, evalOptions(t), baseline, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "write baseline")
 }

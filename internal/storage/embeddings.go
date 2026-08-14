@@ -99,6 +99,65 @@ func CountEmbeddings(ctx context.Context, db *sql.DB, model string) (int, error)
 	return n, nil
 }
 
+// ChunkVector pairs a chunk id with its decoded embedding.
+type ChunkVector struct {
+	ChunkID string
+	Vector  []float32
+}
+
+// DocChunkVectors returns the stored vectors of one document's chunks for model,
+// ordered by chunk id. It backs "documents similar to this one", which pools a
+// document's own already-computed vectors instead of re-embedding it. A document
+// with no embeddings yields an empty slice, not an error: that is the ordinary
+// state before `reindex --embeddings` has run.
+func DocChunkVectors(ctx context.Context, db *sql.DB, docID, model string) ([]ChunkVector, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT e.chunk_id, e.vector
+		FROM embeddings e
+		JOIN chunks c ON c.id = e.chunk_id
+		WHERE c.document_id = ? AND e.model = ?
+		ORDER BY c.id
+	`, docID, model)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list vectors for document %q: %w", docID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []ChunkVector
+	for rows.Next() {
+		var cv ChunkVector
+		var blob []byte
+		if serr := rows.Scan(&cv.ChunkID, &blob); serr != nil {
+			return nil, fmt.Errorf("storage: scan document vector: %w", serr)
+		}
+		cv.Vector, err = decodeVector(blob)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iterate document vectors: %w", err)
+	}
+
+	return out, nil
+}
+
+// AnyEmbeddingModel returns the model name of an arbitrary stored embedding, or
+// found=false when the table is empty. It lets a caller cheaply decide whether
+// vector features are available at all without constructing an embedder (which
+// would load an ONNX model just to read its name).
+func AnyEmbeddingModel(ctx context.Context, db *sql.DB) (model string, found bool, err error) {
+	switch err = db.QueryRowContext(ctx, `SELECT model FROM embeddings LIMIT 1`).Scan(&model); {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", false, nil
+	case err != nil:
+		return "", false, fmt.Errorf("storage: any embedding model: %w", err)
+	}
+
+	return model, true, nil
+}
+
 // ChunkRef is a minimal chunk projection (id + content) used by the reindex path
 // to embed every stored chunk without loading the full chunk rows.
 type ChunkRef struct {
