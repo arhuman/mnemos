@@ -29,7 +29,7 @@ require (
 	github.com/yuin/goldmark v1.8.5
 	golang.org/x/sync v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (
