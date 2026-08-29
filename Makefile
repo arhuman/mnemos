@@ -14,7 +14,7 @@ HOOKS_SRC       := $(SKILL_SRC)/hooks/settings.example.json
 TAPES      := docs/demo.tape docs/demo-mcp.tape
 
 # Pinned dev-tool versions installed by `make tools` (reproducible audits).
-GOLANGCI_VERSION    := v2.12.2
+GOLANGCI_VERSION    := v2.13.2
 GOVULNCHECK_VERSION := v1.1.4
 
 # Version metadata injected into internal/version via -ldflags -X. VERSION is a

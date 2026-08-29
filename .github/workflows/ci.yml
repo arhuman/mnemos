@@ -90,7 +90,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # Not `stable`: the pinned golangci-lint's staticcheck must understand
-          # this toolchain's stdlib; a newer Go panics it (Go 1.27 vs v2.12.2).
+          # this toolchain's stdlib; a newer Go panics it (Go 1.27 broke v2.12.2).
           # Probe `stable` in the test matrix; keep go.mod on the latest patch.
           go-version-file: go.mod
       - name: Verify modules
@@ -98,6 +98,6 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.12.2
+          version: v2.13.2
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
