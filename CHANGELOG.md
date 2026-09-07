@@ -168,6 +168,12 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   demonstrating `mnemos add` and `mnemos task list`.
 - README: memory loop and hook automation documented under "Connect Claude Code".
 
+### Fixed
+- `reindex --embeddings` no longer panics on CRLF text. The sugarme tokenizer's
+  `Precompiled` normalizer crashes on any input containing `\r\n`, which killed
+  the whole reindex on Windows corpora; the embedder now folds CRLF and bare CR
+  to LF before tokenizing (#30).
+
 ### Added
 - Single `MNEMOS_DIR` workspace model (ADR 0005, Phase 2): one anchor from which
   every location derives — `kb/` (the knowledge base: tree root, URI namespace,

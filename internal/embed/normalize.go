@@ -1,6 +1,21 @@
 package embed
 
-import "math"
+import (
+	"math"
+	"strings"
+)
+
+// normalizeNewlines rewrites CRLF and bare CR line endings to LF. The sugarme
+// tokenizer's Precompiled normalizer panics (index out of range in
+// TransformRange) on any input containing "\r\n", so CRLF corpora would
+// otherwise abort a whole reindex. LF-only text tokenizes identically, so this
+// costs nothing on corpora that never had CR.
+func normalizeNewlines(s string) string {
+	if !strings.ContainsRune(s, '\r') {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
 
 // L2Normalize scales vec in place to unit Euclidean length. A zero vector is
 // left unchanged (no division by zero). After normalization the cosine

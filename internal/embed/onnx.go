@@ -165,7 +165,7 @@ func (e *onnxEmbedder) tokenize(texts []string) (ids, mask, typ []int64, batch, 
 	encMask := make([][]int, batch)
 	encTyp := make([][]int, batch)
 	for i, t := range texts {
-		enc, encErr := e.tk.EncodeSingle(t, true)
+		enc, encErr := e.tk.EncodeSingle(normalizeNewlines(t), true)
 		if encErr != nil {
 			return nil, nil, nil, 0, 0, fmt.Errorf("embed: tokenize: %w", encErr)
 		}

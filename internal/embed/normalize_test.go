@@ -29,6 +29,27 @@ func TestL2Normalize(t *testing.T) {
 	})
 }
 
+func TestNormalizeNewlines(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"no carriage return is untouched", "plain ascii\nline", "plain ascii\nline"},
+		{"trailing crlf", "## Summary\r\n", "## Summary\n"},
+		{"crlf mid string", "a\r\nb", "a\nb"},
+		{"bare cr", "a\rb", "a\nb"},
+		{"mixed endings", "a\r\nb\rc\nd", "a\nb\nc\nd"},
+		{"crlf only", "\r\n", "\n"},
+		{"empty", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, normalizeNewlines(tc.in))
+		})
+	}
+}
+
 func norm(v []float32) float64 {
 	var s float64
 	for _, x := range v {
