@@ -16,8 +16,10 @@ import (
 	"path/filepath"
 )
 
-// DefaultModel is the canonical model name stored alongside each vector. It is
-// the sentence-transformers all-MiniLM-L6-v2 checkpoint.
+// DefaultModel is the model used when [embedding].model is unset: the
+// sentence-transformers all-MiniLM-L6-v2 checkpoint. It is the fallback name,
+// not the name every vector carries: an embedder reports the model it actually
+// loaded (see ModelName).
 const DefaultModel = "all-MiniLM-L6-v2"
 
 // Dim is the embedding dimensionality of all-MiniLM-L6-v2.
@@ -51,4 +53,30 @@ func ModelDir(model string) (string, error) {
 	}
 
 	return filepath.Join(home, ".mnemos", "models", model), nil
+}
+
+// ModelName is the inverse of ModelDir: it recovers the model name from a model
+// directory, and is what an embedder reports as the identity of the weights it
+// loaded. A trailing separator is tolerated. An empty or filesystem-root dir
+// yields DefaultModel, so a caller that never set a name still records the
+// conventional one rather than an empty or nonsense label.
+func ModelName(modelDir string) string {
+	base := filepath.Base(filepath.Clean(modelDir))
+	switch base {
+	case ".", string(filepath.Separator), "":
+		return DefaultModel
+	}
+
+	return base
+}
+
+// ResolveModel picks the embedding model name: the configured value when set,
+// otherwise DefaultModel. Callers pass Config.Embedding.Model straight in, so
+// the empty-means-default rule lives in one place.
+func ResolveModel(configured string) string {
+	if configured == "" {
+		return DefaultModel
+	}
+
+	return configured
 }

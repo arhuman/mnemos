@@ -83,7 +83,15 @@ func TestRunModelsInstallUnknown(t *testing.T) {
 
 func TestLoadEmbedderModelMissing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir()) // no model installed here
-	_, err := loadEmbedder()
+	_, err := loadEmbedder("")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not installed")
+}
+
+func TestLoadEmbedderConfiguredModelInError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, err := loadEmbedder("my-other-model")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "my-other-model", "error must name the configured model, not the default")
+	require.NotContains(t, err.Error(), embed.DefaultModel)
 }

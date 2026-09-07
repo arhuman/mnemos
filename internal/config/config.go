@@ -18,12 +18,25 @@ import (
 // on top of built-in defaults, so a missing section or key always falls back to
 // a sane value.
 type Config struct {
-	Indexing IndexingConfig `koanf:"indexing"`
-	Chunking ChunkingConfig `koanf:"chunking"`
-	Search   SearchConfig   `koanf:"search"`
-	MCP      MCPConfig      `koanf:"mcp"`
-	Capture  CaptureConfig  `koanf:"capture"`
-	Security SecurityConfig `koanf:"security"`
+	Indexing  IndexingConfig  `koanf:"indexing"`
+	Chunking  ChunkingConfig  `koanf:"chunking"`
+	Search    SearchConfig    `koanf:"search"`
+	Embedding EmbeddingConfig `koanf:"embedding"`
+	MCP       MCPConfig       `koanf:"mcp"`
+	Capture   CaptureConfig   `koanf:"capture"`
+	Security  SecurityConfig  `koanf:"security"`
+}
+
+// EmbeddingConfig selects which embedding model semantic search loads. It names
+// the model only; the directory is still derived from the name by
+// embed.ModelDir, keeping locations out of the config.
+type EmbeddingConfig struct {
+	// Model is the model name, used both to locate ~/.mnemos/models/<name> and
+	// as the identity persisted in embeddings.model. Changing it points mnemos
+	// at a different model directory and labels new vectors accordingly; vectors
+	// written under the previous name are not matched by semantic search until
+	// they are reindexed. Empty falls back to embed.DefaultModel.
+	Model string `koanf:"model"`
 }
 
 // IndexingConfig configures which files are discovered for ingestion.
@@ -128,6 +141,14 @@ use_vectors = false
 graph_expansion = false
 graph_seed_depth = 3
 graph_decay = 0.5
+
+[embedding]
+# Embedding model for semantic search. Names the model directory under
+# ~/.mnemos/models/ and is stored as the identity of every vector produced, so
+# embeddings.model reflects what actually ran. Changing this after indexing
+# leaves existing vectors under the old name: rerun "mnemos reindex --embeddings"
+# so queries and documents share one model.
+model = "all-MiniLM-L6-v2"
 
 [mcp]
 transport = "stdio"

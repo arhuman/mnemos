@@ -113,7 +113,7 @@ func buildBaseRetriever(cmd *cobra.Command, a *app.App, semantic bool) (search.R
 
 		return engine, nil
 	}
-	e, err := loadEmbedder()
+	e, err := loadEmbedder(a.Config.Embedding.Model)
 	if err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: %v; falling back to lexical search\n", err)
 

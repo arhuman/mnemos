@@ -35,6 +35,22 @@ func TestDefaultTOMLParsesToDefaults(t *testing.T) {
 	require.Contains(t, cfg.Indexing.Include, "**/*.md")
 }
 
+func TestEmbeddingModel(t *testing.T) {
+	t.Run("defaults to all-MiniLM-L6-v2", func(t *testing.T) {
+		cfg, err := config.Load("", missing)
+		require.NoError(t, err)
+		require.Equal(t, "all-MiniLM-L6-v2", cfg.Embedding.Model)
+	})
+
+	t.Run("user file overrides the model", func(t *testing.T) {
+		dir := t.TempDir()
+		p := writeFile(t, dir, "mnemos.toml", "[embedding]\nmodel = \"paraphrase-multilingual-MiniLM-L12-v2\"\n")
+		cfg, err := config.Load(p, exists)
+		require.NoError(t, err)
+		require.Equal(t, "paraphrase-multilingual-MiniLM-L12-v2", cfg.Embedding.Model)
+	})
+}
+
 func TestHiddenCollectionsDefaultsEmpty(t *testing.T) {
 	cfg, err := config.Load("", missing)
 	require.NoError(t, err)

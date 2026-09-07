@@ -173,6 +173,19 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   `Precompiled` normalizer crashes on any input containing `\r\n`, which killed
   the whole reindex on Windows corpora; the embedder now folds CRLF and bare CR
   to LF before tokenizing (#30).
+- `embeddings.model` records the model that actually ran instead of the
+  hardcoded `all-MiniLM-L6-v2`. `Model()` now derives its identity from the
+  loaded model directory, so a swapped or non-default model is no longer stored
+  under a false label (#31).
+
+### Added
+- `[embedding].model` selects the embedding model. It names the directory under
+  `~/.mnemos/models/` and is the identity persisted with every vector; unset
+  means `all-MiniLM-L6-v2`. Changing it after indexing leaves existing vectors
+  under the previous name, and semantic search only matches vectors whose model
+  equals the active one, so rerun `mnemos reindex --embeddings` after a switch.
+  `models install` still downloads only the built-in model; other models are
+  placed in `~/.mnemos/models/<name>` by hand.
 
 ### Added
 - Single `MNEMOS_DIR` workspace model (ADR 0005, Phase 2): one anchor from which

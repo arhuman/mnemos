@@ -34,6 +34,7 @@ type onnxEmbedder struct {
 	exec       *mlcontext.Exec
 	inputNames []string
 	outputName string
+	name       string
 }
 
 // New loads model.onnx and tokenizer.json from modelDir and prepares the
@@ -73,6 +74,7 @@ func New(modelDir string) (Embedder, error) {
 		tk:         tk,
 		inputNames: inputNames,
 		outputName: outputNames[0],
+		name:       ModelName(modelDir),
 	}
 
 	graphFn := func(ctx *mlcontext.Context, inputs []*graph.Node) []*graph.Node {
@@ -94,8 +96,10 @@ func New(modelDir string) (Embedder, error) {
 // Dim reports the embedding dimensionality.
 func (e *onnxEmbedder) Dim() int { return Dim }
 
-// Model reports the model name persisted with each vector.
-func (e *onnxEmbedder) Model() string { return DefaultModel }
+// Model reports the model name persisted with each vector. It is derived from
+// the directory New loaded, not a compile-time constant, so a vector's stored
+// identity matches the weights that produced it.
+func (e *onnxEmbedder) Model() string { return e.name }
 
 // Embed returns one L2-normalized Dim-length vector per input text. The context
 // is checked before the (synchronous, CPU-bound) forward pass so a cancelled

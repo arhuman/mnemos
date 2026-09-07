@@ -87,7 +87,7 @@ func reindexContent(cmd *cobra.Command, a *app.App) error {
 
 // reindexEmbeddings recomputes and stores a vector for every chunk.
 func reindexEmbeddings(cmd *cobra.Command, a *app.App) error {
-	e, err := loadEmbedder()
+	e, err := loadEmbedder(a.Config.Embedding.Model)
 	if err != nil {
 		return err
 	}

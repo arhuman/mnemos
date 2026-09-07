@@ -75,7 +75,7 @@ func runEval(cmd *cobra.Command, state *rootState, bundle string, f evalFlags) e
 		if !embed.Supported {
 			return fmt.Errorf("eval --semantic: %s", noEmbedSupportMsg)
 		}
-		modelDir, err = embed.ModelDir(embed.DefaultModel)
+		modelDir, err = embed.ModelDir(embed.ResolveModel(a.Config.Embedding.Model))
 		if err != nil {
 			return err
 		}

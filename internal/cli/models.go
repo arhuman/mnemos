@@ -68,7 +68,10 @@ func newModelsInstallCmd(_ *rootState) *cobra.Command {
 func runModelsInstall(cmd *cobra.Command, model string) error {
 	files, ok := modelDownloads[model]
 	if !ok {
-		return fmt.Errorf("models: unknown model %q (supported: %s)", model, embed.DefaultModel)
+		return fmt.Errorf(
+			"models: unknown model %q (downloadable: %s; other models can be placed in ~/.mnemos/models/<name> by hand and selected with [embedding].model)",
+			model, embed.DefaultModel,
+		)
 	}
 
 	dir, err := embed.ModelDir(model)
