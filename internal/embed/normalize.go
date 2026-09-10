@@ -14,6 +14,7 @@ func normalizeNewlines(s string) string {
 	if !strings.ContainsRune(s, '\r') {
 		return s
 	}
+
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
