@@ -8,6 +8,7 @@ package config
 import (
 	"fmt"
 
+	"github.com/arhuman/mnemos/internal/encoding"
 	"github.com/knadh/koanf/parsers/toml/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
@@ -48,6 +49,26 @@ type IndexingConfig struct {
 	// rather than read whole, which bounds memory under the parallel pipeline.
 	// 0 (or negative) disables the cap.
 	MaxFileBytes int64 `koanf:"max_file_bytes"`
+	// Encoding declares the charset of legacy, non-UTF-8 source files so they are
+	// decoded at ingest instead of skipped as binary. Empty (the default) keeps
+	// ingest UTF-8-only. See EncodingRule.
+	Encoding []EncodingRule `koanf:"encoding"`
+}
+
+// EncodingRule declares the charset of the files matching Match, so ingest
+// decodes them to UTF-8 instead of rejecting them as binary. Match holds
+// doublestar globs applied to the project-root-relative path, using the same
+// matcher as [indexing].include; they select an encoding only and never widen
+// discovery, so a matched file must still be covered by include to be ingested.
+// Charset is any name or alias resolvable by golang.org/x/text's IANA index
+// (e.g. "windows-1250", "cp1252", "ISO-8859-2") and is validated at config load.
+// Rules are ordered and the first whose Match hits wins, so a narrower
+// per-directory rule placed first overrides a broad per-extension one. A
+// declared charset relaxes the UTF-8 requirement and nothing else: content
+// holding a NUL byte is still skipped as binary.
+type EncodingRule struct {
+	Match   []string `koanf:"match"`
+	Charset string   `koanf:"charset"`
 }
 
 // ChunkingConfig configures deterministic chunk sizing.
@@ -127,6 +148,24 @@ exclude = [".git/**", "node_modules/**", "vendor/**", "dist/**"]
 # memory during the parallel scan; set to 0 to disable the cap.
 max_file_bytes = 4194304
 
+# Legacy source encodings. Ingest is UTF-8-only by default: a file that is not
+# valid UTF-8 is skipped ("ingest skip non-UTF-8 file"), because nothing in its
+# bytes says which legacy charset it is and guessing would index mojibake.
+# Declare a charset to decode such files instead. Each rule matches globs on the
+# path relative to the indexed root, using the same syntax as include/exclude;
+# the first matching rule wins, so list narrower rules first. The globs select an
+# encoding only: a file must still match "include" to be ingested at all.
+# A declared charset never admits binary content, since a file holding a NUL byte
+# is skipped regardless. Charset is any IANA name or alias (windows-1250, cp1252,
+# ISO-8859-2, ...) and is validated when this file loads. Example:
+#   [[indexing.encoding]]
+#   match = ["**/*.pas"]
+#   charset = "windows-1250"
+#
+#   [[indexing.encoding]]
+#   match = ["**/*.dfm"]
+#   charset = "cp1252"
+
 [chunking]
 target_tokens = 700
 overlap_tokens = 80
@@ -203,6 +242,12 @@ func (c *Config) HiddenCollections() []string {
 	return c.Security.Visibility.Deny
 }
 
+// EncodingRules returns the declared legacy charset rules in config order,
+// which is the precedence order the pipeline applies (first match wins).
+func (c *Config) EncodingRules() []EncodingRule {
+	return c.Indexing.Encoding
+}
+
 // SecurityExclude returns the indexing-time secret-exclusion globs, gated by
 // exclude_secrets: turning that off means "index everything", so the globs no
 // longer remove matching files from the scan and an empty set is returned.
@@ -243,14 +288,24 @@ func Load(path string, fileExists func(string) bool) (*Config, error) {
 	return &cfg, nil
 }
 
-// validate rejects loaded values the defaults cannot cover for. Only
-// [mcp].result_mode is checked today: an unknown mode would silently degrade the
-// MCP wire shape, so it is caught at load time rather than mishandled at serve.
+// validate rejects loaded values the defaults cannot cover for: an unknown
+// [mcp].result_mode would silently degrade the MCP wire shape, and an
+// unresolvable [[indexing.encoding]] charset would fail per-file mid-ingest
+// after a partial index. Both are caught at load time instead.
 func (c *Config) validate() error {
 	switch c.MCP.ResultMode {
 	case "text", "structured", "both":
 	default:
 		return fmt.Errorf("config: invalid [mcp].result_mode %q (want text, structured, or both)", c.MCP.ResultMode)
+	}
+
+	for i, rule := range c.Indexing.Encoding {
+		if len(rule.Match) == 0 {
+			return fmt.Errorf("config: [[indexing.encoding]] #%d has no match globs", i+1)
+		}
+		if _, err := encoding.Lookup(rule.Charset); err != nil {
+			return fmt.Errorf("config: [[indexing.encoding]] #%d: %w", i+1, err)
+		}
 	}
 
 	return nil

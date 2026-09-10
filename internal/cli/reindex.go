@@ -69,8 +69,10 @@ func runReindex(cmd *cobra.Command, state *rootState, f reindexFlags) error {
 // reindexContent re-parses every indexed document from disk and reports the tally.
 func reindexContent(cmd *cobra.Command, a *app.App) error {
 	cfg := chunk.ConfigFrom(a.Config.Chunking.TargetTokens, a.Config.Chunking.OverlapTokens)
-	sum, err := ingest.New(a.DB, a.Logger, ingest.WithMaxFileBytes(a.Config.Indexing.MaxFileBytes)).
-		ReindexContent(cmd.Context(), a.TreeRoot(), cfg)
+	sum, err := ingest.New(a.DB, a.Logger,
+		ingest.WithMaxFileBytes(a.Config.Indexing.MaxFileBytes),
+		ingest.WithEncodings(encodingRules(a.Config.EncodingRules())),
+	).ReindexContent(cmd.Context(), a.TreeRoot(), cfg)
 	if err != nil {
 		return err
 	}

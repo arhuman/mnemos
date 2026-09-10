@@ -35,6 +35,9 @@ type WatchConfig struct {
 	SecurityExclude []string
 	// Chunking is the token budget for reindexing a changed file.
 	Chunking chunk.Config
+	// Encoding declares legacy source charsets, so a live edit to a non-UTF-8
+	// file is decoded exactly as a batch ingest would decode it.
+	Encoding []EncodingRule
 	// StorageDir is the directory holding the SQLite database (e.g. ".mnemos").
 	// Events under it are ignored so the watcher does not churn on WAL/SHM writes
 	// it triggers itself.
@@ -94,6 +97,14 @@ func NewWatcher(db *sql.DB, logger *slog.Logger, root, collection string, cfg Wa
 	// MaxFileBytes carries the same contract as the config and ingest paths: a
 	// value <= 0 disables the cap, > 0 sets it. Pass it straight through so
 	// `watch` honors `max_file_bytes = 0` (disable) identically to `ingest`.
+	pipeline := New(db, logger, WithMaxFileBytes(cfg.MaxFileBytes), WithEncodings(cfg.Encoding))
+	// Report a bad charset here rather than at the first matching file: the
+	// watcher is long-running, so a deferred error would surface as an unexplained
+	// per-file skip long after startup.
+	if pipeline.encodingErr != nil {
+		return nil, fmt.Errorf("watch: %w", pipeline.encodingErr)
+	}
+
 	return &Watcher{
 		db:         db,
 		logger:     logger,
@@ -101,7 +112,7 @@ func NewWatcher(db *sql.DB, logger *slog.Logger, root, collection string, cfg Wa
 		uriBase:    uriBase,
 		collection: collection,
 		cfg:        cfg,
-		pipeline:   New(db, logger, WithMaxFileBytes(cfg.MaxFileBytes)),
+		pipeline:   pipeline,
 		debouncer:  newDebouncer(debounceDelay),
 		ready:      make(chan struct{}),
 	}, nil

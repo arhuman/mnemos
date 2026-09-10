@@ -61,6 +61,12 @@ type Pipeline struct {
 	logger       *slog.Logger
 	tc           chunk.TokenCounter
 	maxFileBytes int64
+	encodings    encodingRules
+	// encodingErr defers a bad WithEncodings charset to the first Run/IngestPath
+	// call, since Option cannot return an error. It is surfaced there rather than
+	// dropped: a rule that does not resolve must never silently degrade into
+	// UTF-8-only, which would skip the very files it was added to ingest.
+	encodingErr error
 }
 
 // Option customizes a Pipeline at construction.
@@ -70,6 +76,22 @@ type Option func(*Pipeline)
 // (with a warning) instead of being read into memory. n <= 0 disables the cap.
 func WithMaxFileBytes(n int64) Option {
 	return func(p *Pipeline) { p.maxFileBytes = n }
+}
+
+// WithEncodings declares the charsets of legacy, non-UTF-8 source files so they
+// are decoded at ingest instead of skipped as binary (see EncodingRule). An
+// unresolvable charset is reported by New. Passing no rules, the default, keeps
+// ingest UTF-8-only.
+func WithEncodings(rules []EncodingRule) Option {
+	return func(p *Pipeline) {
+		resolved, err := newEncodingRules(rules)
+		if err != nil {
+			p.encodingErr = err
+
+			return
+		}
+		p.encodings = resolved
+	}
 }
 
 // New builds a Pipeline over db using the default offline token estimator and
@@ -139,6 +161,9 @@ func (p *Pipeline) drainWrites(ctx context.Context, in <-chan result, out chan<-
 // flows through one writer goroutine that owns all DB writes and all tallying,
 // so the counters are race-free by construction.
 func (p *Pipeline) Run(ctx context.Context, opts Options) (Summary, error) {
+	if p.encodingErr != nil {
+		return Summary{}, p.encodingErr
+	}
 	files, err := scan(opts.Root, opts.URIBase, scanRules{
 		include:         opts.Rules.Include,
 		exclude:         opts.Rules.Exclude,

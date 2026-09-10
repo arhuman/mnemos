@@ -79,6 +79,10 @@ frontmatter.
 
 ## Running it more than once
 
+- **Text only, UTF-8 by default:** files holding a NUL byte are skipped as binary,
+  and files that are not valid UTF-8 are skipped as `ingest skip non-UTF-8 file`.
+  Legacy corpora can declare a charset per glob to be decoded instead of skipped;
+  see [Legacy source encodings](configuration.md#legacy-source-encodings).
 - **Idempotent:** unchanged files are skipped by content hash; changed files are
   re-indexed in place. Re-run freely.
 - **One store:** every command shares the one `state/index.db`. `watch` (and

@@ -28,6 +28,9 @@ import (
 // zero chunks. This is the one-shot ingest seam used by mnemos.remember; it adds
 // no scan and no pipeline behavior of its own beyond reusing prepare/write.
 func (p *Pipeline) IngestPath(ctx context.Context, absPath, uri, collection string, cfg chunk.Config) (docID string, chunks int, err error) {
+	if p.encodingErr != nil {
+		return "", 0, p.encodingErr
+	}
 	r, err := p.prepare(ctx, scanned{absPath: absPath, uri: uri}, Options{
 		Collection: collection,
 		Chunking:   cfg,
@@ -67,13 +70,8 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 		return result{}, fmt.Errorf("ingest: read %q: %w", f.absPath, err)
 	}
 
-	// Skip binary content: there is no extractor for non-text files (e.g. PDFs
-	// matched by an include glob), so reading their raw bytes would feed control
-	// characters into chunking, search, and the embedder's tokenizer. Treat a
-	// NUL byte or any invalid UTF-8 as binary.
-	if isBinary(content) {
-		p.logger.Warn("ingest skip binary file", "uri", f.uri)
-
+	content, ok := p.textContent(content, f.uri)
+	if !ok {
 		return result{skip: true}, nil
 	}
 
@@ -227,10 +225,76 @@ func mimeType(path string) string {
 	return mime.TypeByExtension(filepath.Ext(path))
 }
 
-// isBinary reports whether content looks like a non-text file. A NUL byte never
-// appears in valid UTF-8 text and is the classic binary marker; invalid UTF-8
-// catches the rest (e.g. PDF streams, images). Text files — including UTF-8 with
-// accents, CJK, or emoji — pass.
-func isBinary(content []byte) bool {
-	return bytes.IndexByte(content, 0) >= 0 || !utf8.Valid(content)
+// hasNUL reports whether content carries a NUL byte, the classic binary marker:
+// it never appears in valid text, in UTF-8 or in any legacy single-byte charset.
+// This check is unconditional, so a declared [[indexing.encoding]] charset can
+// never admit binary content (e.g. a binary Delphi .dfm, which is NUL-dense).
+func hasNUL(content []byte) bool {
+	return bytes.IndexByte(content, 0) >= 0
+}
+
+// textContent returns content as UTF-8 text, reporting false when the file is
+// not ingestible text (and logging why). There is no extractor for non-text
+// files (e.g. a PDF matched by an include glob), so feeding their raw bytes into
+// chunking, search, and the embedder's tokenizer must be prevented.
+//
+// The three cases are ordered deliberately:
+//
+//   - A NUL byte is the binary marker; it never appears in valid text, in UTF-8
+//     or in any legacy single-byte charset. Checked first and unconditionally, so
+//     a declared charset can only ever relax the UTF-8 requirement below, never
+//     admit binary content.
+//   - A declared [[indexing.encoding]] charset decodes legacy text (Windows-125x,
+//     ISO-8859-x) that is valid source but not valid UTF-8.
+//   - Otherwise content must already be UTF-8. Invalid UTF-8 here is NUL-free and
+//     may well be legacy text, but nothing in the bytes says which charset, so it
+//     is skipped rather than guessed at.
+//
+// Decoding happens before the caller hashes, so the content hashed, parsed,
+// chunked, and stored is always UTF-8. That also makes a charset correction
+// self-healing: the decoded bytes change, so the hash changes, so the file is
+// re-ingested instead of surviving as a mis-decode behind the unchanged-hash skip.
+func (p *Pipeline) textContent(content []byte, uri string) ([]byte, bool) {
+	if hasNUL(content) {
+		p.logger.Warn("ingest skip binary file", "uri", uri)
+
+		return nil, false
+	}
+
+	if dec, ok := p.encodings.decoderFor(uri); ok {
+		decoded, err := dec.Decode(content)
+		if err != nil {
+			p.logger.Warn("ingest skip undecodable file", "uri", uri, "charset", dec.Name(), "error", err)
+
+			return nil, false
+		}
+
+		return decoded, true
+	}
+
+	if !utf8.Valid(content) {
+		// Name the offset and the remedy so this is not mistaken for a true binary.
+		p.logger.Warn("ingest skip non-UTF-8 file", "uri", uri,
+			"offset", firstInvalidUTF8(content),
+			"hint", "declare its charset in [[indexing.encoding]] to ingest it")
+
+		return nil, false
+	}
+
+	return content, true
+}
+
+// firstInvalidUTF8 returns the byte offset of the first invalid UTF-8 sequence
+// in content, or -1 when content is valid. It turns "this file is not UTF-8"
+// into a location an operator can inspect to identify the real charset.
+func firstInvalidUTF8(content []byte) int {
+	for i := 0; i < len(content); {
+		r, size := utf8.DecodeRune(content[i:])
+		if r == utf8.RuneError && size <= 1 {
+			return i
+		}
+		i += size
+	}
+
+	return -1
 }
