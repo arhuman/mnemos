@@ -27,8 +27,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/sugarme/tokenizer v0.3.0
 	github.com/yuin/goldmark v1.8.6
-	golang.org/x/sync v0.22.0
-	golang.org/x/text v0.41.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.58.0
 )
