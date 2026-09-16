@@ -184,14 +184,16 @@ a session. Claude then calls the tools automatically; see [Capabilities](#capabi
 <summary>Why the <code>--config</code> path must be absolute</summary>
 
 Claude Code does not guarantee the working directory it spawns the server in, so
-anchoring to the config file is what makes retrieval reliable. `mnemos serve`
-resolves a relative `[storage].path` against the config file's directory, so an
-absolute `--config` is all you need: the database, capture directory, and tree
-root all anchor next to that file regardless of where Claude Code launches the
-server. A bare `mnemos serve` only finds your data when the server's working
-directory happens to be the project root, which Claude Code does not promise; when
-the database can't be found, `serve` fails with a clear error instead of silently
-returning empty results.
+anchoring to the config file is what makes retrieval reliable. Passing `--config
+<file>` makes that file's directory the **MNEMOS_DIR**, and every location is a
+fixed subpath of it, so an absolute `--config` is all you need: the knowledge base
+(`kb/`), the database (`state/index.db`), and the models directory all anchor next
+to that file regardless of where Claude Code launches the server. A bare `mnemos
+serve` falls back to discovery (the nearest project `.mnemos`, else `~/.mnemos`),
+which only finds your data when the server's working directory happens to be
+inside the project, and Claude Code does not promise that. See
+[docs/paths-and-indexing.md](docs/paths-and-indexing.md) for the full resolution
+order.
 </details>
 
 <p align="center">
@@ -290,7 +292,7 @@ commands). Note the spelling: `mnemos.search` is the **MCP tool** Claude calls;
 
 ### Write (requires `allow_write = true`)
 
-- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the OKF tree instead of auto-naming under `[capture].dir`. Content is **secret-scanned** before it is written and indexed.
+- **`mnemos.remember`**: write a note into memory. Pass an optional `path` (e.g. `"adr/0003-rule-engine.md"`) to place it at an explicit location in the OKF tree instead of auto-naming under `kb/capture/`. Content is **secret-scanned** before it is written and indexed.
 - **`mnemos.okfy`**: convert an existing `.txt`/`.md` file in the tree into an OKF document (frontmatter + body) at `out` (defaults to the source path with a `.md` extension) and index it, leaving the source intact. The source body is **secret-scanned** first.
 
 `mnemos edit <uri>` is the human counterpart: a terminal editor for one document, gated by the same `allow_write` flag, with no MCP tool of its own. See [Edit documents interactively](#edit-documents-interactively).
@@ -319,7 +321,7 @@ allow_delete = true    # gates mnemos.forget and mnemos.move
 If a watcher is running over the tree, `forget`/`move` operations are also seen by
 the watcher (redundant but idempotent); the tools update the index directly and
 work without a watcher. Set `[capture] defer_to_watcher = true` when a watcher
-covers `capture_dir` to avoid double indexation of remembered notes.
+covers `kb/capture/` to avoid double indexation of remembered notes.
 
 ## Edit documents interactively
 
@@ -394,7 +396,11 @@ mnemos natively understands [OKF](https://github.com/GoogleCloudPlatform/knowled
 cross-links, with no special mode:
 
 - frontmatter `tags`/`type` become fuzzy ranking signals in FTS,
-- markdown links are captured as edges (stored, not yet traversed),
+- markdown links are captured as edges and traversed: `mnemos related` (and the
+  `mnemos.related` tool) walks a document's outbound links and inbound backlinks,
+  `follow_links` attaches them to a read or context call, and
+  `[search] graph_expansion = true` fills empty result slots with the top hits'
+  1-hop neighbors,
 - `index.md` files are treated as structure only (kept out of FTS and the link graph).
 
 OKF bundles double as the corpus for `mnemos eval`, which auto-derives held-out
@@ -404,7 +410,7 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 ## Reference
 
 - **[docs/commands.md](docs/commands.md)** — every CLI command and its flags.
-- **[docs/configuration.md](docs/configuration.md)** — the layered `.mnemos/mnemos.toml`, with all defaults.
+- **[docs/configuration.md](docs/configuration.md)**: the layered `<MNEMOS_DIR>/mnemos.toml`, with all defaults.
 - **[docs/paths-and-indexing.md](docs/paths-and-indexing.md)** — how state is located, what gets indexed, where writes land, and the idempotency/URI rules.
 - **[docs/architecture.md](docs/architecture.md)** — design principles and the retrieval-evaluation methodology.
 

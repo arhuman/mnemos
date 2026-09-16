@@ -43,7 +43,8 @@ files ────► │   ingest    │  scan → hash (change detection) → 
         │ cited results
         ▼
  ┌─────────────┐
- │   memory    │  verb layer: search/read/context/remember/okfy/forget/move
+ │   memory    │  verb layer: search/read/context/related/list/
+ │             │             remember/okfy/forget/move
  └──────┬──────┘
    ┌────┴────┐
    ▼         ▼
@@ -65,16 +66,21 @@ fixed subpaths of one **MNEMOS_DIR**, resolved by `workspace` (see
 | `config` | Configuration schema, built-in defaults, and the TOML (koanf) loader. Carries behaviour only — indexing, chunking, search, MCP surface, security — never locations. |
 | `workspace` | Resolves the single MNEMOS_DIR anchor and the fixed layout derived from it (`kb/` knowledge base, `state/index.db`, `models/`). Every location is a subpath of MNEMOS_DIR; none is individually configurable. |
 | `cli` | Cobra command tree (`init`, `ingest`, `search`, `serve`, …). Thin adapter over `memory`. |
-| `mcp` | MCP server and tool handlers (`search`, `read`, `context`, `remember`, `okfy`, `list`, `forget`, `move`). Thin adapter over `memory`. |
-| `memory` | The verb layer: one owner of every memory operation (search, read, context, list, remember, okfy, forget, move). Both `cli` and `mcp` call it, so the two surfaces share semantics, gating, and option construction. |
+| `mcp` | MCP server and tool handlers (`search`, `read`, `context`, `related`, `list`, `remember`, `okfy`, `forget`, `move`). Thin adapter over `memory`. |
+| `memory` | The verb layer: one owner of every memory operation (search, read, context, related, list, remember, okfy, forget, move). Both `cli` and `mcp` call it, so the two surfaces share semantics, gating, and option construction. |
 | `ingest` | Indexing pipeline: scanner, content hasher, debounced file watcher, capture, OKF-aware processing. |
+| `encoding` | Legacy charset resolution and decoding to UTF-8. Shared by the config loader (which validates a declared charset at startup) and the ingest pipeline (which applies it at read time), so neither imports the other. |
 | `parse` | Frontmatter extraction and format-specific parsing (Markdown, Go, plain text). |
 | `chunk` | Token-aware splitting for text, Markdown, and code; golden-tested. |
 | `storage` | SQLite persistence (modernc.org/sqlite, pure Go), goose migrations, FTS5, documents/chunks/links/embeddings access. |
 | `search` | Retrieval: bm25 lexical engine, hybrid (vector + bm25) fusion, reranking, query parsing. |
 | `embed` | Embedding interface. Default build is a no-op; the `embed` build tag swaps in local ONNX inference (gomlx), with pooling and normalization. |
 | `okf` | OKF bundle validation and the auto-maintained `log.md`. |
+| `okfschema` | Field-type registry for frontmatter keys: which are closed enumerations, which hold tag lists, which the indexer owns and a human must not retype. Pure data, no store or UI dependency. |
+| `okfyaml` | In-place frontmatter patching. Rewrites only the bytes of the targeted value, so key order, comments, blank lines, and quoting survive verbatim. |
 | `browse` | Directory walking with exclusion patterns (backs `ls` / `mnemos.list`). |
+| `doctor` | Read-only health detectors over an indexed OKF tree, emitting structured findings. Never mutates the store or the files: the diagnosis half of consolidation (see [ADR 0006](adr/0006-kb-health-diagnostics-doctor.md)). |
+| `tui` | Bubbletea terminal editor behind `mnemos edit`: nav / metadata / content panes, `$EDITOR` handoff, move-and-rename, save-then-reindex. |
 | `security` | Path-confinement guard and secret scanning. |
 | `eval` | Retrieval-quality evaluation over OKF bundles (held-out pairs, Hit@1 / Recall@12 / MRR@12, baselines). |
 | `model` | Shared data types (`Result`, `Chunk`, …). |
@@ -154,6 +160,34 @@ corpus for evaluating retrieval. The methodology (`internal/eval`):
   `baseline.json` and prints the deltas; the FTS lexical baseline is the number
   semantic embeddings must beat. Without a gate, watching for drift over time is
   manual.
+
+### Graph answerability (`--graph`)
+
+Held-out mode measures keyword retrieval; it cannot show whether the **link
+graph** makes an answer reachable that keywords miss. `mnemos eval <bundle>
+--graph` covers that, over a bundle's curated `cases.json` rather than
+auto-derived pairs. Each case is a natural-language query whose best lexical match
+is a hub or overview document, plus the `expected_uri` that is reachable from that
+hub by a link instead of by keywords.
+
+The depth is deliberately shallow (`defaultGraphK = 3`): the question is whether
+the answer is reachable when it is *not* already in the top few lexical hits, and
+a deep K over a small bundle would return every document and score a trivial 1.0.
+The metrics are **DirectHitAtK** (what plain lexical search achieves),
+**NeighborInclusion** (the answer is in the top-K *or* in the 1-hop neighborhood
+of the top seeds, i.e. what read/context neighborhood injection would achieve),
+**Lift** (the value injection adds), and **RecoveredMisses** (of the cases plain
+search misses, the share the graph recovers). `--seed-depth` caps how many of the
+top-K hits get expanded.
+
+### Expansion non-regression (`--graph-expansion`)
+
+Injecting neighbors into search results can *displace* correct lexical hits, so
+the expansion path needs a guardrail pointed the other way. `mnemos eval <bundle>
+--graph-expansion` re-runs the ordinary held-out eval with the retriever wrapped
+in `GraphRetriever`, and reports Hit@1 / Recall / MRR against the plain baseline.
+It is the non-regression gate for `[search] graph_expansion`: expansion must not
+cost anything on queries that lexical search already answers.
 
 ## Performance profile
 
