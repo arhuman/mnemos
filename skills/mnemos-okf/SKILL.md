@@ -171,6 +171,14 @@ Tasks are OKF documents (`type: task`) under `tasks/`, grouped by
   starting**, without announcing it — unless: the request is a question or
   analysis with no change expected; an equivalent task is already
   `in_progress`; or the user opted out ("no task").
+- **A plan file already driving the work wins.** When the request is a phase of
+  a plan file (`.claude/plan/*.md` or `PLAN.md`, as used by the 10x plugin's
+  `10x-loop` skill), that file is the source of truth for scope, acceptance and
+  status. Do not create a task per phase and do not mirror phase statuses here:
+  one task pointing at the plan path is enough, and a second copy of the phase
+  list drifts from the one the loop actually reads. The task holds a pointer,
+  never content. That is the same contract the 10x plugin's `10x-plan` skill
+  follows from its side, when it writes `decisions/active-plan.md` here.
 - **State/history split.** `tasks/<slug>.md` holds only the current state and
   stays small; `tasks/<slug>-history.md` is an append-only event log. Update
   state via read-modify-write; append history rather than rewriting it.
