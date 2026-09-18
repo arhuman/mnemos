@@ -45,8 +45,8 @@ make install
 
 # 2. index a project
 cd ~/work/myproject
-mnemos init                                 # creates ./.mnemos/ (mnemos.toml, kb, db, models)
-mnemos ingest docs --collection myproject   # index a directory
+mnemos init                              # creates ./.mnemos/ (mnemos.toml, kb, db, models)
+mnemos add docs --collection myproject   # copy a directory into the kb and index it
 mnemos search "why did we choose this architecture"
 ```
 
@@ -80,13 +80,23 @@ That's the whole loop — **index → ask → cited answer.** Everything below i
 [capabilities](#capabilities).
 
 <details>
-<summary>⚠️ One gotcha: a document's identity is its path <em>relative to where you ran <code>ingest</code></em></summary>
+<summary>⚠️ One gotcha: <code>add</code> copies your files into the kb; it does not track them</summary>
 
-A document's URI is its path relative to the scan root you ingested (`docs` above), not
-your working directory. Ingesting two directories that each contain (say) `index.md`
-resolves both to the same URI: the **second ingest silently overwrites the first**. To
-index several trees cleanly, ingest from one common root (`mnemos ingest .`). Details in
-[docs/paths-and-indexing.md](docs/paths-and-indexing.md).
+mnemos is a managed store. Addressable content lives under `.mnemos/kb/`, and a
+document's URI is its path relative to that kb root. `mnemos add docs` **snapshots**
+`docs/` into `kb/docs/`, so later edits to your original `docs/` are not picked up
+until you run `mnemos add` again. (`mnemos ingest <kb-subpath>` re-indexes content
+already inside the kb; it refuses a path outside it.)
+
+Two sources landing at the same kb subpath collide, and the later one wins. Use
+`--into` to give each a distinct home:
+
+```bash
+mnemos add ~/work/api/docs   --into api
+mnemos add ~/work/infra/docs --into infra
+```
+
+Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
 </details>
 
 ## Why mnemos
@@ -122,7 +132,7 @@ store, full-text search, an incremental file watcher, and an admin CLI. See
 **A cited hit, out of the box** (default lexical build, on a shipped example bundle):
 
 ```text
-$ mnemos ingest examples/git-recipes/bundle --collection git
+$ mnemos add examples/git-recipes/bundle --into . --collection git
 $ mnemos search "recover lost commits" --limit 1
 1. recovery/reflog.md#Gotcha
    lines 24-28

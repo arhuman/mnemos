@@ -269,6 +269,60 @@ func (w *Watcher) addTree(fsw *fsnotify.Watcher) error {
 	return nil
 }
 
+// addTreeAndSweep registers dir and every directory beneath it with the fsnotify
+// watcher, then schedules a debounced reindex for every indexable file already
+// inside. The sweep is what makes a directory moved into the tree converge: its
+// contents arrive atomically with the rename and generate no events of their own,
+// so only an explicit walk can discover them. A freshly created empty directory
+// sweeps nothing, making this a superset of a bare fsw.Add.
+//
+// Failures are logged rather than returned: a live event handler cannot abort the
+// watch loop, and the startup reconcile is the backstop for anything missed here.
+func (w *Watcher) addTreeAndSweep(ctx context.Context, fsw *fsnotify.Watcher, dir string) {
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if w.isIgnored(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+		if d.IsDir() {
+			if aerr := fsw.Add(path); aerr != nil {
+				w.logger.Warn("watch add new dir", "path", path, "error", aerr)
+			}
+
+			return nil
+		}
+
+		rel, rerr := filepath.Rel(w.root, path)
+		if rerr != nil {
+			w.logger.Warn("watch relativize", "path", path, "error", rerr)
+
+			return nil
+		}
+		if !Match(rel, w.cfg.Include, w.cfg.Exclude, w.cfg.SecurityExclude) {
+			return nil
+		}
+		uriRel, uerr := filepath.Rel(w.uriBase, path)
+		if uerr != nil {
+			w.logger.Warn("watch relativize uri", "path", path, "error", uerr)
+
+			return nil
+		}
+		uri := filepath.ToSlash(uriRel)
+		w.debouncer.trigger(path, func() { w.reindexPath(ctx, path, uri) })
+
+		return nil
+	})
+	if err != nil {
+		w.logger.Warn("watch sweep new dir", "path", dir, "error", err)
+	}
+}
+
 // handleEvent routes one fsnotify event. New directories are registered for
 // watching; create/write/rename of an indexable file schedule a debounced
 // reindex; remove/rename-away of a tracked file schedule a debounced deletion.
@@ -280,12 +334,13 @@ func (w *Watcher) handleEvent(ctx context.Context, fsw *fsnotify.Watcher, event 
 	}
 
 	// A newly created directory must be added to the watch set (recursion is
-	// manual). Its already-present children are picked up by their own events.
+	// manual), and its existing children swept. A mkdir arrives empty and its
+	// children generate their own Create events, but a directory renamed or moved
+	// into the tree arrives already populated and fsnotify emits nothing for the
+	// contents — so without the sweep those files stay invisible until restart.
 	if event.Op.Has(fsnotify.Create) {
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
-			if err := fsw.Add(path); err != nil {
-				w.logger.Warn("watch add new dir", "path", path, "error", err)
-			}
+			w.addTreeAndSweep(ctx, fsw, path)
 
 			return
 		}
@@ -342,8 +397,16 @@ func (w *Watcher) reindexPath(ctx context.Context, absPath, uri string) {
 	w.logger.Debug("watch reindexed", "uri", uri, "document_id", docID, "chunks", chunks)
 }
 
-// deletePath evicts a document by uri. The DELETE cascades to chunks/links and
-// the FTS index via foreign keys and the chunks delete trigger.
+// deletePath evicts whatever was indexed at uri. The DELETE cascades to
+// chunks/links and the FTS index via foreign keys and the chunks delete trigger.
+//
+// A vanished path may have been either a file or a directory, and fsnotify does
+// not say which (it cannot stat what is already gone). DeleteByURI matches the
+// uri exactly, so a directory uri would match no document and evict nothing,
+// leaving every document beneath it indexed at a path that no longer exists.
+// The prefix sweep is therefore not an optimization: it is what makes a removed
+// or renamed-away directory converge. It mirrors moveDir's prefix handling, so
+// the watcher and `mnemos mv` agree on what a directory-shaped change means.
 func (w *Watcher) deletePath(ctx context.Context, uri string) {
 	if err := storage.DeleteByURI(ctx, w.db, uri); err != nil {
 		w.logger.Warn("watch delete failed", "uri", uri, "error", err)
@@ -351,6 +414,29 @@ func (w *Watcher) deletePath(ctx context.Context, uri string) {
 		return
 	}
 	w.logger.Info("watch removed document", "uri", uri)
+
+	w.deleteSubtree(ctx, uri)
+}
+
+// deleteSubtree evicts every document indexed beneath uri, treating it as a
+// directory prefix. It is a no-op for a plain file uri (nothing is stored under
+// "notes/a.md/"), so it is safe to call unconditionally after a document delete.
+func (w *Watcher) deleteSubtree(ctx context.Context, uri string) {
+	prefix := uri + "/"
+	rows, err := storage.ListDocuments(ctx, w.db, storage.ListFilter{PathPrefix: prefix})
+	if err != nil {
+		w.logger.Warn("watch list subtree failed", "prefix", prefix, "error", err)
+
+		return
+	}
+	for _, row := range rows {
+		if err := storage.DeleteByURI(ctx, w.db, row.URI); err != nil {
+			w.logger.Warn("watch delete failed", "uri", row.URI, "error", err)
+
+			continue
+		}
+		w.logger.Info("watch removed document", "uri", row.URI)
+	}
 }
 
 // isIgnored reports whether path is the storage directory itself, a path under

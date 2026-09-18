@@ -261,3 +261,53 @@ func TestDebouncerSeparateKeysFireIndependently(t *testing.T) {
 	wg.Wait()
 	require.Equal(t, int64(2), calls.Load())
 }
+
+// TestWatcherIndexesDirectoryMovedIn covers a directory renamed into the watched
+// tree. Its children arrive atomically with the rename and fsnotify emits no
+// event for them, so only an explicit sweep of the new directory discovers them.
+// Before the sweep existed, these files stayed invisible to search until the
+// watcher was restarted.
+func TestWatcherIndexesDirectoryMovedIn(t *testing.T) {
+	root := t.TempDir()
+	staging := t.TempDir()
+	db := watchTestDB(t)
+
+	// Build the subtree outside the watched root so no event fires for its files.
+	writeNote(t, staging, "sub/one.md", "# One\n\nmoved-in body\n")
+	writeNote(t, staging, "sub/deep/two.md", "# Two\n\nnested moved-in body\n")
+
+	startWatcher(t, db, root, "c", testWatchConfig())
+
+	require.NoError(t, os.Rename(filepath.Join(staging, "sub"), filepath.Join(root, "sub")))
+
+	require.True(t, pollUntil(t, watchDeadline, func() bool {
+		return countChunks(t, db, "sub/one.md") > 0
+	}), "file in a moved-in directory should be indexed")
+	require.True(t, pollUntil(t, watchDeadline, func() bool {
+		return countChunks(t, db, "sub/deep/two.md") > 0
+	}), "file in a nested moved-in directory should be indexed")
+}
+
+// TestWatcherEvictsRenamedDirectory covers a directory renamed within the watched
+// tree. The old uri must stop resolving (otherwise search cites a path that no
+// longer exists) and the new one must index. DeleteByURI matches exactly, so a
+// directory uri evicts nothing without the prefix sweep in deletePath.
+func TestWatcherEvictsRenamedDirectory(t *testing.T) {
+	root := t.TempDir()
+	db := watchTestDB(t)
+	startWatcher(t, db, root, "c", testWatchConfig())
+
+	writeNote(t, root, "a/one.md", "# One\n\nrenamed dir body\n")
+	require.True(t, pollUntil(t, watchDeadline, func() bool {
+		return countChunks(t, db, "a/one.md") > 0
+	}), "file should be indexed before the rename")
+
+	require.NoError(t, os.Rename(filepath.Join(root, "a"), filepath.Join(root, "b")))
+
+	require.True(t, pollUntil(t, watchDeadline, func() bool {
+		return countChunks(t, db, "a/one.md") == 0
+	}), "the old uri should be evicted, not left as a phantom")
+	require.True(t, pollUntil(t, watchDeadline, func() bool {
+		return countChunks(t, db, "b/one.md") > 0
+	}), "the file should be indexed under its new uri")
+}
