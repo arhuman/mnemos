@@ -168,10 +168,7 @@ func reindexKB(cmd *cobra.Command, layout workspace.Layout, logger *slog.Logger)
 	}
 	defer func() { _ = a.Close() }()
 
-	return ingest.New(a.DB, a.Logger,
-		ingest.WithMaxFileBytes(cfg.Indexing.MaxFileBytes),
-		ingest.WithEncodings(encodingRules(cfg.EncodingRules())),
-	).Run(cmd.Context(), ingest.Options{
+	return ingest.New(a.DB, a.Logger, pipelineOptions(a)...).Run(cmd.Context(), ingest.Options{
 		Root:       layout.KB,
 		Collection: "default",
 		Rules: ingest.Rules{

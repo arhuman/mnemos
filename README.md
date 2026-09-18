@@ -107,7 +107,7 @@ Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
 - **Cited answers**: every result links back to the exact `file#section` and line range, so claims are verifiable.
 - **Fast search by default**: SQLite FTS5 / bm25 out of the box; optional local semantic + hybrid search behind a build tag.
 - **Read-write memory**: the agent can capture durable notes (`remember`); you can manage the tree (`forget`, `move`, `list`).
-- **Safe by default**: read-only unless you opt in; writes are path-confined and content is secret-scanned.
+- **Safe by default**: read-only unless you opt in; writes are path-confined, and content is secret-scanned on the way into the index (both capture and ingest, gated by `exclude_secrets`).
 
 ## How it works
 
@@ -430,7 +430,10 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 - Shipped binaries carry SBOMs (generated with syft) and are signed with cosign (keyless OIDC).
 - Read-only by default. Write-back is opt-in (`allow_write = true`). Destructive operations (forget, move) require a separate opt-in (`allow_delete = true`).
 - All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the tree root, symlink escapes, access to `.mnemos/`, and `[security].exclude` globs are all rejected.
-- Captured content is secret-scanned before it is written or indexed.
+- Content is secret-scanned before it is indexed, on both the capture path
+  (`remember`, `okfy`, which reject) and the ingest path (`ingest`, `add`,
+  `watch`, `reindex`, which skip the file with a warning naming the matched rules
+  and continue the run). Set `[security] exclude_secrets = false` to disable.
 - Path/secret exclusion patterns keep `.env`, keys, and secret dirs out of the index.
 
 See [SECURITY.md](SECURITY.md) for the full policy.

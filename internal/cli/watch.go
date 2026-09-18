@@ -44,6 +44,7 @@ func runWatch(cmd *cobra.Command, state *rootState, path, collection string) err
 			URIBase:         a.TreeRoot(), // URIs are kb-relative even when watching a subtree
 			MaxFileBytes:    a.Config.Indexing.MaxFileBytes,
 			Encoding:        encodingRules(a.Config.EncodingRules()),
+			ScanSecrets:     a.Config.Security.ExcludeSecrets,
 		})
 		if err != nil {
 			return err

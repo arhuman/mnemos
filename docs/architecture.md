@@ -20,7 +20,9 @@ contributors can find their way around.
    displayed to a human.
 8. **Read-first, then write-back.** Read-only is the starting point; capture
    (`mnemos.remember`) is contained: opt-in, confined to the OKF tree, and
-   secret-scanned.
+   secret-scanned. Screening applies to everything entering the index, not just
+   capture: ingest screens each file too, since the index is served to an LLM.
+   Capture rejects the write; ingest skips the file and continues the run.
 
 ## Data flow
 

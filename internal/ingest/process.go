@@ -70,7 +70,7 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 		return result{}, fmt.Errorf("ingest: read %q: %w", f.absPath, err)
 	}
 
-	content, ok := p.textContent(content, f.uri)
+	content, ok := p.indexableContent(content, f.uri)
 	if !ok {
 		return result{skip: true}, nil
 	}
@@ -259,6 +259,55 @@ func hasNUL(content []byte) bool {
 // chunked, and stored is always UTF-8. That also makes a charset correction
 // self-healing: the decoded bytes change, so the hash changes, so the file is
 // re-ingested instead of surviving as a mis-decode behind the unchanged-hash skip.
+// indexableContent decodes the file's bytes to UTF-8 and screens them for
+// credentials, returning ok=false when the file must be skipped for either
+// reason. It is the single gate every ingest path crosses before content reaches
+// the index, so "what is allowed into the store" has one answer rather than one
+// per caller.
+//
+// Screening runs before the caller hashes, so a file indexed before screening
+// was enabled is caught on the next run instead of being skipped as unchanged.
+func (p *Pipeline) indexableContent(content []byte, uri string) ([]byte, bool) {
+	decoded, ok := p.textContent(content, uri)
+	if !ok {
+		return nil, false
+	}
+	if p.scanSecrets(decoded, uri) {
+		return nil, false
+	}
+
+	return decoded, true
+}
+
+// scanSecrets reports whether the file at uri must be skipped because its
+// content holds a credential. With no scanner configured nothing is screened and
+// it always returns false, preserving the pre-scanning behavior.
+//
+// The warning names the matched rules only, never the matched values: the log is
+// a lower-trust sink than the index, so echoing a secret there would move it
+// rather than contain it. A scanner failure is treated as a skip, since ingesting
+// content that could not be screened is the outcome scanning exists to prevent.
+func (p *Pipeline) scanSecrets(content []byte, uri string) bool {
+	if p.scanner == nil {
+		return false
+	}
+
+	findings, err := p.scanner.Scan(string(content))
+	if err != nil {
+		p.logger.Warn("ingest skip unscannable file", "uri", uri, "error", err)
+
+		return true
+	}
+	if len(findings) > 0 {
+		p.logger.Warn("ingest skip file holding secrets",
+			"uri", uri, "rules", strings.Join(findingRules(findings), ", "))
+
+		return true
+	}
+
+	return false
+}
+
 func (p *Pipeline) textContent(content []byte, uri string) ([]byte, bool) {
 	if hasNUL(content) {
 		p.logger.Warn("ingest skip binary file", "uri", uri)

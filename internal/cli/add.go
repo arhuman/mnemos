@@ -90,10 +90,7 @@ func runAdd(cmd *cobra.Command, state *rootState, src, into, collection, mode st
 			},
 			Chunking: chunk.ConfigFrom(a.Config.Chunking.TargetTokens, a.Config.Chunking.OverlapTokens),
 		}
-		summary, err := ingest.New(a.DB, a.Logger,
-			ingest.WithMaxFileBytes(a.Config.Indexing.MaxFileBytes),
-			ingest.WithEncodings(encodingRules(a.Config.EncodingRules())),
-		).Run(cmd.Context(), opts)
+		summary, err := ingest.New(a.DB, a.Logger, pipelineOptions(a)...).Run(cmd.Context(), opts)
 		if err != nil {
 			return err
 		}

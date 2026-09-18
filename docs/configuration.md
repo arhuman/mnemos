@@ -47,6 +47,9 @@ result_mode = "text"        # wire shape: "text" | "structured" | "both" (legacy
 defer_to_watcher = false    # true => remember is write-only, a running watcher ingests
 
 [security]
+# Screen content for credentials before it is indexed. Capture (remember, okfy)
+# rejects the write; ingest (ingest, add, watch, reindex) skips the file with a
+# warning naming the matched rules and continues the run.
 exclude_secrets = true
 exclude = ["**/.env", "**/*.pem", "**/*.key", "**/id_rsa", "**/secrets/**"]
 

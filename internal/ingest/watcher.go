@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"github.com/arhuman/mnemos/internal/chunk"
+	"github.com/arhuman/mnemos/internal/security"
 	"github.com/arhuman/mnemos/internal/storage"
 )
 
@@ -49,6 +50,10 @@ type WatchConfig struct {
 	// is skipped with a warning. A value <= 0 disables the cap, matching the
 	// [indexing].max_file_bytes config contract.
 	MaxFileBytes int64
+	// ScanSecrets screens a changed file for credentials before indexing it, so a
+	// live edit is held to the same bar as a batch ingest. Mirrors
+	// [security].exclude_secrets.
+	ScanSecrets bool
 }
 
 // Watcher incrementally keeps a collection in sync with a directory tree. It
@@ -97,7 +102,11 @@ func NewWatcher(db *sql.DB, logger *slog.Logger, root, collection string, cfg Wa
 	// MaxFileBytes carries the same contract as the config and ingest paths: a
 	// value <= 0 disables the cap, > 0 sets it. Pass it straight through so
 	// `watch` honors `max_file_bytes = 0` (disable) identically to `ingest`.
-	pipeline := New(db, logger, WithMaxFileBytes(cfg.MaxFileBytes), WithEncodings(cfg.Encoding))
+	popts := []Option{WithMaxFileBytes(cfg.MaxFileBytes), WithEncodings(cfg.Encoding)}
+	if cfg.ScanSecrets {
+		popts = append(popts, WithSecretScanner(security.NewRegexScanner()))
+	}
+	pipeline := New(db, logger, popts...)
 	// Report a bad charset here rather than at the first matching file: the
 	// watcher is long-running, so a deferred error would surface as an unexplained
 	// per-file skip long after startup.

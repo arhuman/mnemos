@@ -16,6 +16,7 @@ import (
 
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/model"
+	"github.com/arhuman/mnemos/internal/security"
 )
 
 // Options configures a single ingest run.
@@ -62,6 +63,10 @@ type Pipeline struct {
 	tc           chunk.TokenCounter
 	maxFileBytes int64
 	encodings    encodingRules
+	// scanner screens file content for credentials before it is indexed. Nil
+	// disables screening, which is the zero value so an unconfigured Pipeline
+	// behaves exactly as it did before scanning existed.
+	scanner security.SecretScanner
 	// encodingErr defers a bad WithEncodings charset to the first Run/IngestPath
 	// call, since Option cannot return an error. It is surfaced there rather than
 	// dropped: a rule that does not resolve must never silently degrade into
@@ -76,6 +81,18 @@ type Option func(*Pipeline)
 // (with a warning) instead of being read into memory. n <= 0 disables the cap.
 func WithMaxFileBytes(n int64) Option {
 	return func(p *Pipeline) { p.maxFileBytes = n }
+}
+
+// WithSecretScanner screens every file's content for credentials before it is
+// indexed, skipping a matching file with a warning naming the matched rules (not
+// the matched values). It exists because the index is served to an LLM: an
+// unscanned ingest would surface a credential verbatim in a search snippet. A
+// nil scanner, the default, disables screening.
+//
+// The skip is deliberate rather than a hard failure: one bad file must not abort
+// a tree ingest, matching the oversize and binary skips.
+func WithSecretScanner(s security.SecretScanner) Option {
+	return func(p *Pipeline) { p.scanner = s }
 }
 
 // WithEncodings declares the charsets of legacy, non-UTF-8 source files so they
