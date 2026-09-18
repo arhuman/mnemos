@@ -46,3 +46,10 @@ func TestMigrateCreatesSchema(t *testing.T) {
 		require.NoError(t, storage.Migrate(db))
 	})
 }
+
+// TestPragmasHoldOnEveryPooledConnection pins the reason the pragmas travel in
+// the DSN rather than through ExecContext. Setting them with Exec configures only
+// whichever pooled connection served that call, so the rest of the pool runs
+// without foreign_keys (silently breaking ON DELETE CASCADE) and without
+// busy_timeout. Holding several connections open at once forces the pool to
+// create distinct physical connections and asserts each one is configured.

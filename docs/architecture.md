@@ -74,7 +74,7 @@ fixed subpaths of one **MNEMOS_DIR**, resolved by `workspace` (see
 | `encoding` | Legacy charset resolution and decoding to UTF-8. Shared by the config loader (which validates a declared charset at startup) and the ingest pipeline (which applies it at read time), so neither imports the other. |
 | `parse` | Frontmatter extraction and format-specific parsing (Markdown, Go, plain text). |
 | `chunk` | Token-aware splitting for text, Markdown, and code; golden-tested. |
-| `storage` | SQLite persistence (modernc.org/sqlite, pure Go), goose migrations, FTS5, documents/chunks/links/embeddings access. |
+| `storage` | SQLite persistence (modernc.org/sqlite, pure Go), goose migrations, FTS5, documents/chunks/links/embeddings access. Connection PRAGMAs travel in the DSN so the driver replays them on every pooled connection; setting them with `Exec` would configure only the one connection that served the call, leaving the rest of the pool without `foreign_keys` (silently skipping `ON DELETE CASCADE`). |
 | `search` | Retrieval: bm25 lexical engine, hybrid (vector + bm25) fusion, reranking, query parsing. |
 | `embed` | Embedding interface. Default build is a no-op; the `embed` build tag swaps in local ONNX inference (gomlx), with pooling and normalization. |
 | `okf` | OKF bundle validation and the auto-maintained `log.md`. |
