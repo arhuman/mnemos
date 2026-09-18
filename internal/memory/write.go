@@ -213,6 +213,13 @@ type OkfyInput struct {
 // gated on either surface for the local operator running it directly; the MCP
 // adapter applies the [mcp].allow_write gate at its boundary (the tool is also
 // un-registered when write is off).
+//
+// This is the one write verb whose gate lives in a surface rather than here. It
+// is deliberate (see TestOkfyUngated) and carries no exposure today, since the
+// MCP adapter both un-registers the tool and re-checks. It is recorded as an
+// architectural inconsistency rather than a defect: a third surface calling this
+// Service would inherit an unguarded write, so revisit the decision before
+// adding one.
 func (s *Service) Okfy(ctx context.Context, in OkfyInput) (ingest.OkfyResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ingest.OkfyResult{}, err

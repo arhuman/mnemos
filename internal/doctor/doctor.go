@@ -57,6 +57,11 @@ type Options struct {
 	PathPrefix string
 	Collection string
 	MaxBytes   int64
+	// ExcludeCollections drops documents in these collections from every
+	// detector. Findings name document URIs and tags, so a denied collection must
+	// not appear in them. Callers should not set this directly: memory.Diagnose
+	// populates it from the server-side visibility config.
+	ExcludeCollections []string
 }
 
 // Run executes every detector against the store and returns the findings, grouped
@@ -68,17 +73,18 @@ func Run(ctx context.Context, db *sql.DB, opts Options) ([]Finding, error) {
 	}
 
 	digests, err := storage.ListDocumentDigests(ctx, db, storage.ListFilter{
-		Collection: opts.Collection,
-		PathPrefix: opts.PathPrefix,
+		Collection:         opts.Collection,
+		PathPrefix:         opts.PathPrefix,
+		ExcludeCollections: opts.ExcludeCollections,
 	})
 	if err != nil {
 		return nil, err
 	}
-	broken, err := storage.ListBrokenLinks(ctx, db)
+	broken, err := storage.ListBrokenLinks(ctx, db, opts.ExcludeCollections)
 	if err != nil {
 		return nil, err
 	}
-	chunkless, err := storage.ListDocsWithoutChunks(ctx, db)
+	chunkless, err := storage.ListDocsWithoutChunks(ctx, db, opts.ExcludeCollections)
 	if err != nil {
 		return nil, err
 	}

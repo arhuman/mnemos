@@ -66,6 +66,20 @@ type EditSource struct {
 	Editable   bool
 }
 
+// requireVisible reports an error when uri belongs to a denied collection. The
+// edit verbs read and rewrite file bytes directly, bypassing the index queries
+// where the deny list is otherwise applied, so without this check a hidden
+// collection stays hidden from search while remaining fully readable (and
+// writable) through the editor. The error matches the read path's wording so a
+// denied collection is indistinguishable from a missing document.
+func (s *Service) requireVisible(ctx context.Context, uri string) error {
+	if s.hiddenCollection(s.collectionFor(ctx, uri)) {
+		return fmt.Errorf("unknown uri %q", uri)
+	}
+
+	return nil
+}
+
 // OpenForEdit reads the document at uri from disk and splits its frontmatter for
 // display. It reads the file rather than the index because an editor edits the
 // source of truth, not the reconstruction of it.
@@ -77,6 +91,9 @@ func (s *Service) OpenForEdit(ctx context.Context, uri string) (EditSource, erro
 	abs, resolved, err := security.ResolveWithin(s.treeRoot, uri, s.cfg.ConfinementExclude())
 	if err != nil {
 		return EditSource{}, fmt.Errorf("edit path: %w", err)
+	}
+	if verr := s.requireVisible(ctx, resolved); verr != nil {
+		return EditSource{}, verr
 	}
 	content, err := os.ReadFile(abs) //nolint:gosec // abs is confined to the tree by ResolveWithin
 	if err != nil {
@@ -153,6 +170,9 @@ func (s *Service) EditFrontmatter(ctx context.Context, in EditFrontmatterInput) 
 	abs, uri, err := security.ResolveWithin(s.treeRoot, in.URI, s.cfg.ConfinementExclude())
 	if err != nil {
 		return EditResult{}, fmt.Errorf("edit path: %w", err)
+	}
+	if verr := s.requireVisible(ctx, uri); verr != nil {
+		return EditResult{}, verr
 	}
 
 	current, err := os.ReadFile(abs) //nolint:gosec // abs is confined to the tree by ResolveWithin

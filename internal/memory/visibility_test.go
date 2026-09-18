@@ -11,6 +11,7 @@ import (
 
 	"github.com/arhuman/mnemos/internal/browse"
 	"github.com/arhuman/mnemos/internal/config"
+	"github.com/arhuman/mnemos/internal/doctor"
 	"github.com/arhuman/mnemos/internal/ingest"
 	"github.com/arhuman/mnemos/internal/memory"
 	"github.com/arhuman/mnemos/internal/search"
@@ -154,4 +155,62 @@ func TestReadHidesDeniedCollectionByChunkID(t *testing.T) {
 	got, err := svc.ReadChunk(ctx, visibleChunks[0].ID)
 	require.NoError(t, err, "a chunk in a visible collection must remain readable")
 	require.Equal(t, "mnemos", got.Collection)
+}
+
+// TestOpenForEditHidesDeniedCollection covers the edit read path. The edit verbs
+// read file bytes directly rather than querying the index, so they do not inherit
+// the deny filter the query verbs apply; without an explicit check a denied
+// collection stays hidden from search while remaining fully readable here.
+func TestOpenForEditHidesDeniedCollection(t *testing.T) {
+	svc, _, _ := newVisibilityFixture(t, []string{"perso"}, "mnemos", "perso")
+	ctx := context.Background()
+
+	_, err := svc.OpenForEdit(ctx, "perso/doc.md")
+	require.ErrorContains(t, err, "unknown uri", "a denied collection must look missing, not readable")
+
+	visible, err := svc.OpenForEdit(ctx, "mnemos/doc.md")
+	require.NoError(t, err, "a visible collection must still open")
+	require.Equal(t, "mnemos/doc.md", visible.URI)
+}
+
+// TestEditFrontmatterHidesDeniedCollection covers the edit write path: a denied
+// document must not be rewritable through the editor either.
+func TestEditFrontmatterHidesDeniedCollection(t *testing.T) {
+	cfg, err := config.Load("", func(string) bool { return false })
+	require.NoError(t, err)
+	cfg.Security.Visibility.Deny = []string{"perso"}
+	cfg.MCP.AllowWrite = true
+
+	db := testutil.NewDB(t)
+	logger := testutil.DiscardLogger()
+	treeRoot := t.TempDir()
+	testutil.Chdir(t, treeRoot)
+
+	rel := "perso/doc.md"
+	abs := testutil.WriteFile(t, treeRoot, rel, "---\ntitle: Secret\n---\n\nbody\n")
+	_, _, err = ingest.File(context.Background(), db, logger, abs, rel, "perso", testChunking)
+	require.NoError(t, err)
+
+	svc := memory.New(db, cfg, treeRoot, nil, logger)
+	_, err = svc.EditFrontmatter(context.Background(), memory.EditFrontmatterInput{
+		URI:    rel,
+		Fields: []memory.FieldEdit{{Key: "title", Value: "Rewritten"}},
+	})
+	require.ErrorContains(t, err, "unknown uri", "a denied collection must not be writable via edit")
+}
+
+// TestDiagnoseHidesDeniedCollection covers doctor findings, which carry document
+// URIs and tags: an unfiltered run discloses the namespace of a denied collection
+// even though every query surface hides it.
+func TestDiagnoseHidesDeniedCollection(t *testing.T) {
+	svc, _, _ := newVisibilityFixture(t, []string{"perso"}, "mnemos", "perso")
+
+	findings, err := svc.Diagnose(context.Background(), doctor.Options{})
+	require.NoError(t, err)
+
+	for _, f := range findings {
+		for _, uri := range f.URIs {
+			require.NotContains(t, uri, "perso/", "doctor must not disclose a denied collection's uris")
+		}
+	}
 }

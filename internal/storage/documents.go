@@ -362,18 +362,40 @@ type BrokenLink struct {
 	SrcURI string
 }
 
+// excludeCollectionsClause returns a parameterized "AND <alias>.collection NOT
+// IN (...)" fragment and its args, or empty strings when nothing is excluded.
+// alias names the documents table in the caller's query, so the same visibility
+// boundary can be applied to joins that whereExcludeCollections (which assumes an
+// unqualified column) cannot express. Values are bound, never interpolated.
+func excludeCollectionsClause(alias string, exclude []string) (string, []any) {
+	if len(exclude) == 0 {
+		return "", nil
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?, ", len(exclude)), ", ")
+	args := make([]any, 0, len(exclude))
+	for _, c := range exclude {
+		args = append(args, c)
+	}
+
+	return " AND " + alias + ".collection NOT IN (" + ph + ")", args
+}
+
 // ListBrokenLinks returns every link edge whose dst_doc uri does not resolve to a
 // document, joined back to the source document's uri. links.dst_doc is a plain
 // uri with no foreign key, so a LEFT JOIN onto documents.uri finds the misses.
 // Ordered by (src, dst) for stable output.
-func ListBrokenLinks(ctx context.Context, db *sql.DB) ([]BrokenLink, error) {
+//
+// excludeCollections drops edges whose source document is in a hidden collection,
+// so a doctor run cannot disclose the uris of a denied collection.
+func ListBrokenLinks(ctx context.Context, db *sql.DB, excludeCollections []string) ([]BrokenLink, error) {
+	clause, args := excludeCollectionsClause("src", excludeCollections)
 	rows, err := db.QueryContext(ctx, `
 		SELECT src.uri, l.dst_doc
 		FROM links l
 		JOIN documents src ON l.src_doc = src.id
 		LEFT JOIN documents dst ON l.dst_doc = dst.uri
-		WHERE dst.uri IS NULL
-		ORDER BY src.uri, l.dst_doc`)
+		WHERE dst.uri IS NULL`+clause+`
+		ORDER BY src.uri, l.dst_doc`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("storage: list broken links: %w", err)
 	}
@@ -396,14 +418,16 @@ func ListBrokenLinks(ctx context.Context, db *sql.DB) ([]BrokenLink, error) {
 
 // ListDocsWithoutChunks returns the uris of documents that have no chunk rows —
 // an indexed document with no extractable body (empty or whitespace-only). Used
-// by the doctor structural-gap check. Ordered by uri.
-func ListDocsWithoutChunks(ctx context.Context, db *sql.DB) ([]string, error) {
+// by the doctor structural-gap check. Ordered by uri. excludeCollections drops
+// documents in hidden collections so a doctor run cannot disclose their uris.
+func ListDocsWithoutChunks(ctx context.Context, db *sql.DB, excludeCollections []string) ([]string, error) {
+	clause, args := excludeCollectionsClause("d", excludeCollections)
 	rows, err := db.QueryContext(ctx, `
 		SELECT d.uri
 		FROM documents d
 		LEFT JOIN chunks c ON c.document_id = d.id
-		WHERE c.id IS NULL
-		ORDER BY d.uri`)
+		WHERE c.id IS NULL`+clause+`
+		ORDER BY d.uri`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("storage: list docs without chunks: %w", err)
 	}
