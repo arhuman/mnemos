@@ -4,6 +4,8 @@
 // deterministic Go-side boosts, and enforces exact document filters.
 package search
 
+import "time"
+
 // Query is a single retrieval request. Text is the raw user query (sanitized
 // into FTS5 barewords by the engine). The remaining fields are exact document
 // filters compiled into the SQL WHERE clause; the zero value of each means "no
@@ -32,6 +34,18 @@ type Query struct {
 	// Limit caps the result count. The caller supplies the configured default
 	// when it is not overridden on the command line.
 	Limit int
+	// TemporalWeight, in [0,1], is how much a document's age discounts its score.
+	// Zero (the default) disables temporal ranking entirely, so an unset Query
+	// scores exactly as it did before recency existed: the feature can never
+	// silently reorder a caller that did not ask for it. One means a document
+	// older than several halflives is discounted to near nothing.
+	TemporalWeight float64
+	// TemporalHalflife is the age at which a document keeps half its recency
+	// factor. Zero uses defaultTemporalHalflife. Ignored when TemporalWeight is 0.
+	TemporalHalflife time.Duration
+	// Now is the instant ages are measured against. The zero value means
+	// time.Now(); tests set it so a decay assertion does not depend on the clock.
+	Now time.Time
 }
 
 // overFetchFactor is how many candidates beyond the requested limit each
@@ -41,6 +55,13 @@ type Query struct {
 // overlap between the lexical and vector candidate lists to reinforce. Same
 // purpose — rank on a wider pool, then cut to limit — so one factor governs both.
 const overFetchFactor = 4
+
+// defaultTemporalHalflife is the age at which a document keeps half its recency
+// factor when a caller enables temporal ranking without naming a halflife. One
+// week matches the rhythm of project memory: a decision from this week is live
+// context, one from last month is history worth finding but not worth ranking
+// above today's.
+const defaultTemporalHalflife = 168 * time.Hour
 
 // normalizeLimit returns a usable result limit: the caller's value, or 1 when it
 // is unset (zero or negative). Every retriever applies the same floor so an

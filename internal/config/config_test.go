@@ -129,3 +129,30 @@ func TestLoadRejectsInvalidResultMode(t *testing.T) {
 	_, err := config.Load(path, exists)
 	require.Error(t, err)
 }
+
+// TestDefaultTemporalRankingIsOff pins the compatibility promise in config: the
+// shipped default must leave recency disabled, so a fresh install ranks exactly
+// as every published eval number says it does.
+func TestDefaultTemporalRankingIsOff(t *testing.T) {
+	cfg, err := config.Load("", missing)
+	require.NoError(t, err)
+	require.Zero(t, cfg.Search.TemporalWeight,
+		"recency must ship off; enabling it by default would silently reorder every existing corpus")
+	require.Equal(t, "168h", cfg.Search.TemporalHalflife)
+}
+
+// TestLoadOverlaysTemporalRanking checks the keys are actually wired to koanf
+// rather than merely declared on the struct.
+func TestLoadOverlaysTemporalRanking(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "mnemos.toml", `
+[search]
+temporal_weight = 0.75
+temporal_halflife = "24h"
+`)
+
+	cfg, err := config.Load(path, exists)
+	require.NoError(t, err)
+	require.InDelta(t, 0.75, cfg.Search.TemporalWeight, 1e-9)
+	require.Equal(t, "24h", cfg.Search.TemporalHalflife)
+}

@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/arhuman/mnemos/internal/model"
 )
@@ -73,6 +75,10 @@ func (e *Engine) Search(ctx context.Context, q Query) ([]model.Result, error) {
 	defer func() { _ = rows.Close() }()
 
 	terms := queryTerms(q.Text)
+	now := q.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 	results := make([]model.Result, 0, fetch)
 	for rows.Next() {
 		var r model.Result
@@ -92,7 +98,7 @@ func (e *Engine) Search(ctx context.Context, q Query) ([]model.Result, error) {
 		}
 		// SQLite bm25() is negative with more-negative = better; flip it so the
 		// displayed score is positive and higher = better.
-		r.Score = -rank + headingScore(r.HeadingPath, terms)
+		r.Score = (-rank + headingScore(r.HeadingPath, terms)) * recencyFactor(r.ModifiedAt, q, now)
 		results = append(results, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -129,6 +135,44 @@ func headingScore(headingPath string, terms []string) float64 {
 	}
 
 	return 0
+}
+
+// recencyFactor returns the multiplier a document's age applies to its score:
+// 1.0 for a document modified now, decaying by half every halflife. It is a
+// multiplier rather than an additive term so it scales with bm25 instead of
+// competing with it: a weak old hit and a weak new hit stay close together,
+// while a strong hit keeps its lead over a strong-but-stale one.
+//
+// It returns exactly 1 (no effect) whenever temporal ranking cannot be applied
+// honestly: weight 0, an unparseable timestamp, or a document with no
+// modified_at. Guessing an age for an undated document would rank it as
+// infinitely old, silently burying every document the indexer could not date.
+func recencyFactor(modifiedAt string, q Query, now time.Time) float64 {
+	if q.TemporalWeight <= 0 {
+		return 1
+	}
+	mod, err := time.Parse(time.RFC3339, modifiedAt)
+	if err != nil {
+		return 1
+	}
+
+	halflife := q.TemporalHalflife
+	if halflife <= 0 {
+		halflife = defaultTemporalHalflife
+	}
+
+	// A document dated in the future (clock skew, a hand-edited frontmatter) is
+	// treated as current rather than boosted above everything else.
+	age := max(now.Sub(mod), 0)
+
+	decay := math.Pow(0.5, age.Seconds()/halflife.Seconds())
+
+	// Blend toward 1 by the weight: at weight 1 the raw decay applies, at 0.5 a
+	// document of any age keeps at least half its score. This is what makes the
+	// weight a dial rather than a switch.
+	w := math.Min(q.TemporalWeight, 1)
+
+	return 1 - w + w*decay
 }
 
 // compile-time assertion that Engine satisfies Retriever.

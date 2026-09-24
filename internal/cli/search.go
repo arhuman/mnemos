@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/arhuman/mnemos/internal/app"
+	"github.com/arhuman/mnemos/internal/config"
 	"github.com/arhuman/mnemos/internal/embed"
 	"github.com/arhuman/mnemos/internal/memory"
 	"github.com/arhuman/mnemos/internal/model"
@@ -24,6 +26,7 @@ type searchFlags struct {
 	limit      int
 	asJSON     bool
 	semantic   bool
+	recent     bool
 }
 
 // newSearchCmd builds the `search <query...>` command. The query words are
@@ -47,6 +50,7 @@ func newSearchCmd(state *rootState) *cobra.Command {
 	cmd.Flags().IntVar(&f.limit, "limit", 0, "maximum number of results (default: config search.default_limit)")
 	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit results as a JSON array")
 	cmd.Flags().BoolVar(&f.semantic, "semantic", false, "fuse lexical and vector retrieval (requires -tags embed build and an installed model)")
+	cmd.Flags().BoolVar(&f.recent, "recent", false, "favour recently modified documents (overrides search.temporal_weight for this query)")
 
 	return cmd
 }
@@ -59,13 +63,16 @@ func runSearch(cmd *cobra.Command, state *rootState, args []string, f searchFlag
 		}
 
 		svc := memory.New(a.DB, a.Config, a.TreeRoot(), nil, a.Logger)
+		weight, halflife := temporalRanking(a.Config.Search, f.recent)
 		results, err := svc.Search(cmd.Context(), retriever, search.Query{
-			Text:          strings.Join(args, " "),
-			Collection:    f.collection,
-			PathPrefix:    f.pathPrefix,
-			FileType:      f.fileType,
-			ModifiedSince: f.since,
-			Limit:         f.limit,
+			Text:             strings.Join(args, " "),
+			Collection:       f.collection,
+			PathPrefix:       f.pathPrefix,
+			FileType:         f.fileType,
+			ModifiedSince:    f.since,
+			Limit:            f.limit,
+			TemporalWeight:   weight,
+			TemporalHalflife: halflife,
 		})
 		if err != nil {
 			return err
@@ -171,4 +178,31 @@ func writeJSONResults(out io.Writer, results []model.Result) error {
 	}
 
 	return nil
+}
+
+// recentTemporalWeight is the weight --recent applies when the config leaves
+// temporal ranking off. Full strength: the flag exists to ask for recency, so a
+// timid default would make it look broken.
+const recentTemporalWeight = 1.0
+
+// temporalRanking resolves the effective recency weight and halflife for one
+// query. The --recent flag turns ranking on for a config that has it off; a
+// config that already sets a weight keeps it, so the flag never silently
+// weakens a deliberately configured value. An unparseable halflife falls back to
+// the engine default rather than failing the search: a malformed duration in a
+// config file should not make the tool refuse to answer.
+func temporalRanking(cfg config.SearchConfig, recent bool) (float64, time.Duration) {
+	weight := cfg.TemporalWeight
+	if recent && weight <= 0 {
+		weight = recentTemporalWeight
+	}
+
+	var halflife time.Duration
+	if cfg.TemporalHalflife != "" {
+		if d, err := time.ParseDuration(cfg.TemporalHalflife); err == nil && d > 0 {
+			halflife = d
+		}
+	}
+
+	return weight, halflife
 }

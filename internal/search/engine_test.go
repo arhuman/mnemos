@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -190,4 +192,168 @@ func TestSearchRanksExpectedDoc(t *testing.T) {
 		_, err := engine.Search(ctx, search.Query{Text: "!!! ??? ...", Limit: 5})
 		require.ErrorIs(t, err, search.ErrEmptyQuery)
 	})
+}
+
+// newTemporalCorpus ingests two documents that match the same term with the same
+// strength but carry timestamps a year apart, so only recency can separate them.
+func newTemporalCorpus(ctx context.Context, t *testing.T) *sql.DB {
+	t.Helper()
+	src := t.TempDir()
+	write(t, src, "docs/fresh.md",
+		"---\ntimestamp: 2026-09-01T00:00:00Z\n---\n\n# Fresh\n\nratelimit policy.\n")
+	write(t, src, "docs/stale.md",
+		"---\ntimestamp: 2025-09-01T00:00:00Z\n---\n\n# Stale\n\nratelimit policy.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "temporal.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "docs",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	return db
+}
+
+// TestTemporalWeightZeroLeavesScoresUntouched is the compatibility guard: the
+// default Query must score exactly as it did before recency existed. If this
+// fails, every shipped eval number silently changed meaning.
+func TestTemporalWeightZeroLeavesScoresUntouched(t *testing.T) {
+	ctx := context.Background()
+	db := newTemporalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "ratelimit", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.InDelta(t, got[0].Score, got[1].Score, 1e-9,
+		"with no temporal weight, two equally-matching docs must score identically regardless of age")
+}
+
+// TestTemporalWeightFavoursRecentDocument checks the feature does what it says:
+// same term, same strength, newer document ranks first.
+func TestTemporalWeightFavoursRecentDocument(t *testing.T) {
+	ctx := context.Background()
+	db := newTemporalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	now, err := time.Parse(time.RFC3339, "2026-09-02T00:00:00Z")
+	require.NoError(t, err)
+
+	got, err := engine.Search(ctx, search.Query{
+		Text:           "ratelimit",
+		Limit:          10,
+		TemporalWeight: 1,
+		Now:            now,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Contains(t, got[0].URI, "fresh.md", "the recent document must rank first")
+	require.Greater(t, got[0].Score, got[1].Score)
+}
+
+// TestTemporalHalflifeControlsDecayRate pins the halflife to the score: a
+// document exactly one halflife old keeps half its score at full weight.
+func TestTemporalHalflifeControlsDecayRate(t *testing.T) {
+	ctx := context.Background()
+	db := newTemporalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	base, err := engine.Search(ctx, search.Query{Text: "ratelimit", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, base, 2)
+
+	now, err := time.Parse(time.RFC3339, "2026-09-01T00:00:00Z")
+	require.NoError(t, err)
+
+	// stale.md is exactly 365 days older than the query instant.
+	got, err := engine.Search(ctx, search.Query{
+		Text:             "ratelimit",
+		Limit:            10,
+		TemporalWeight:   1,
+		TemporalHalflife: 365 * 24 * time.Hour,
+		Now:              now,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	byURI := make(map[string]float64)
+	for _, r := range got {
+		byURI[r.URI] = r.Score
+	}
+	var unweighted float64
+	for _, r := range base {
+		if strings.Contains(r.URI, "stale.md") {
+			unweighted = r.Score
+		}
+	}
+	require.NotZero(t, unweighted)
+
+	var stale float64
+	for uri, score := range byURI {
+		if strings.Contains(uri, "stale.md") {
+			stale = score
+		}
+	}
+	// bm25 scores here are ~7e-7, so an absolute tolerance larger than the values
+	// themselves would pass for any decay rate. Assert on the ratio instead.
+	require.InEpsilon(t, unweighted*0.5, stale, 1e-6,
+		"a document one halflife old must keep half its score")
+}
+
+// TestTemporalRankingIgnoresUndatedDocument guards the honesty rule: a document
+// the indexer could not date must not be treated as infinitely old and buried.
+func TestTemporalRankingIgnoresUndatedDocument(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	write(t, src, "docs/undated.md", "# Undated\n\nratelimit policy.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "undated.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "docs",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	engine := search.NewEngine(db, discardLogger())
+	base, err := engine.Search(ctx, search.Query{Text: "ratelimit", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, base, 1)
+
+	got, err := engine.Search(ctx, search.Query{
+		Text: "ratelimit", Limit: 10, TemporalWeight: 1,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.InDelta(t, base[0].Score, got[0].Score, 1e-9,
+		"an undated document must keep its score rather than decay to nothing")
+}
+
+// TestTemporalRankingTreatsFutureAsCurrent covers clock skew and hand-edited
+// frontmatter: a future timestamp must not out-boost a current document.
+func TestTemporalRankingTreatsFutureAsCurrent(t *testing.T) {
+	ctx := context.Background()
+	db := newTemporalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	past, err := time.Parse(time.RFC3339, "2020-01-01T00:00:00Z")
+	require.NoError(t, err)
+
+	got, err := engine.Search(ctx, search.Query{
+		Text: "ratelimit", Limit: 10, TemporalWeight: 1, Now: past,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.InDelta(t, got[0].Score, got[1].Score, 1e-9,
+		"documents dated in the future are all treated as current, so neither wins")
 }

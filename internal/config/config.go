@@ -91,6 +91,14 @@ type SearchConfig struct {
 	// GraphDecay scales a seed's score for its injected neighbors, in (0,1]
 	// (0 = built-in default).
 	GraphDecay float64 `koanf:"graph_decay"`
+	// TemporalWeight, in [0,1], is how much a document's age discounts its score.
+	// Zero (the default) leaves ranking byte-identical to a build without recency,
+	// so enabling the feature is always the caller's explicit choice.
+	TemporalWeight float64 `koanf:"temporal_weight"`
+	// TemporalHalflife is the age at which a document keeps half its recency
+	// factor, as a Go duration string (e.g. "168h"). Empty uses the built-in
+	// default. Ignored when TemporalWeight is 0.
+	TemporalHalflife string `koanf:"temporal_halflife"`
 }
 
 // MCPConfig configures the MCP server surface.
@@ -180,6 +188,12 @@ use_vectors = false
 graph_expansion = false
 graph_seed_depth = 3
 graph_decay = 0.5
+# Recency ranking: discount a document's score by its age, halving it every
+# temporal_halflife. Off by default (weight 0), which scores exactly as a build
+# without recency, so existing eval numbers stay comparable. "mnemos search
+# --recent" turns it on for one query without editing this file.
+temporal_weight = 0.0
+temporal_halflife = "168h"
 
 [embedding]
 # Embedding model for semantic search. Names the model directory under

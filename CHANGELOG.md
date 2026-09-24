@@ -167,6 +167,11 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   constraints, decisions, tasks with state/history split, consolidation journal)
   demonstrating `mnemos add` and `mnemos task list`.
 - README: memory loop and hook automation documented under "Connect Claude Code".
+- Recency ranking: `mnemos search --recent` (or `[search] temporal_weight` in
+  `mnemos.toml`) discounts a result by its document's age, halving its score every
+  `temporal_halflife` (default `168h`). Off by default, so an unconfigured search
+  ranks exactly as before. A document the indexer could not date, or one dated in
+  the future, keeps its score rather than being buried.
 
 ### Fixed
 - `reindex --embeddings` no longer panics on CRLF text. The sugarme tokenizer's
