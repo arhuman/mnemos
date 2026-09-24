@@ -139,6 +139,11 @@ func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result
 		ModifiedAt:      modifiedAt,
 		IndexedAt:       time.Now().UTC().Format(time.RFC3339),
 		FrontmatterJSON: parsed.FrontmatterJSON,
+		// The journal flag is derived from the type the document declares, not
+		// from where it sits: an entry moved out of kb/journal/ is still a
+		// transcript, and a kb document dropped into that directory is still
+		// citable knowledge (ADR-0011).
+		Journal: storage.IsJournalType(parsed.DocType),
 	}
 
 	return result{doc: doc, chunks: chunks, links: buildLinks(docID, parsed)}, nil

@@ -95,6 +95,11 @@ type Document struct {
 	ModifiedAt      string
 	IndexedAt       string
 	FrontmatterJSON string
+	// Journal marks a session-journal entry (ADR-0011). Journal documents are
+	// indexed and readable like any other, but ranked retrieval excludes them
+	// unless the caller opts in, so transcripts never compete with citable
+	// knowledge. It is stamped at ingest from the document's declared OKF type.
+	Journal bool
 }
 
 // Chunk is a persisted chunks row. StartLine/EndLine are 1-based inclusive.

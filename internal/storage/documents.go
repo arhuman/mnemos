@@ -62,8 +62,8 @@ func UpsertDocument(ctx context.Context, tx *sql.Tx, d model.Document) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO documents (
 			id, uri, collection, content_hash, title, mime_type,
-			size_bytes, modified_at, indexed_at, frontmatter_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			size_bytes, modified_at, indexed_at, frontmatter_json, journal
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(uri) DO UPDATE SET
 			content_hash     = excluded.content_hash,
 			collection       = excluded.collection,
@@ -72,10 +72,12 @@ func UpsertDocument(ctx context.Context, tx *sql.Tx, d model.Document) error {
 			size_bytes       = excluded.size_bytes,
 			modified_at      = excluded.modified_at,
 			indexed_at       = excluded.indexed_at,
-			frontmatter_json = excluded.frontmatter_json
+			frontmatter_json = excluded.frontmatter_json,
+			journal          = excluded.journal
 	`,
 		d.ID, d.URI, d.Collection, d.ContentHash, nullString(d.Title), nullString(d.MimeType),
 		d.SizeBytes, nullString(d.ModifiedAt), d.IndexedAt, nullString(d.FrontmatterJSON),
+		d.Journal,
 	)
 	if err != nil {
 		return fmt.Errorf("storage: upsert document %q: %w", d.URI, err)

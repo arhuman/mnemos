@@ -179,6 +179,11 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   unresolved rather than erroring. Demotion also applies to documents reached
   through graph expansion, so it cannot be bypassed by arriving as a link
   neighbor. See `docs/adr/0010-supersession-semantics.md`.
+- Journal tier (storage): a document declaring OKF `type: Journal` is stamped as
+  a journal entry at ingest and tracked by a stored flag rather than a uri
+  prefix, so it stays classified across a move or a rename. Existing databases
+  migrate with every row defaulting to non-journal, leaving retrieval unchanged.
+  See `docs/adr/0011-journal-tier.md`.
 
 ### Fixed
 - `reindex --embeddings` no longer panics on CRLF text. The sugarme tokenizer's
