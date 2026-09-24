@@ -525,3 +525,130 @@ func TestSupersededDemotionComposesWithRecency(t *testing.T) {
 	require.Contains(t, got[0].URI, "fresh-current.md",
 		"equally recent, the superseded one must still lose")
 }
+
+// newJournalCorpus ingests a citable document and a journal entry that match the
+// same term equally, so only the exclusion can separate them. The journal entry
+// deliberately sits outside any journal-looking directory: exclusion must key on
+// the stored class, not the uri (ADR-0011).
+func newJournalCorpus(ctx context.Context, t *testing.T) *sql.DB {
+	t.Helper()
+	src := t.TempDir()
+	write(t, src, "adr/rate-limit.md",
+		"---\ntype: decision\n---\n\n# Rate limit\n\nthrottle policy at the edge.\n")
+	write(t, src, "elsewhere/turn-7.md",
+		"---\ntype: Journal\n---\n\n# Turn 7\n\nthrottle policy came up in conversation.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "journal.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "kb",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	return db
+}
+
+// TestJournalExcludedByDefault is the core of ADR-0011: a default query returns
+// citable knowledge only, however well a journal entry matches.
+func TestJournalExcludedByDefault(t *testing.T) {
+	ctx := context.Background()
+	db := newJournalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "throttle", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "the journal entry must not appear in a default search")
+	require.Contains(t, got[0].URI, "adr/rate-limit.md")
+}
+
+// TestJournalReturnedWhenIncluded covers the opt-in: the entry is indexed and
+// retrievable, it is merely not offered unasked.
+func TestJournalReturnedWhenIncluded(t *testing.T) {
+	ctx := context.Background()
+	db := newJournalCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "throttle", Limit: 10, IncludeJournal: true})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	var sawJournal bool
+	for _, r := range got {
+		if strings.Contains(r.URI, "turn-7.md") {
+			sawJournal = true
+		}
+	}
+	require.True(t, sawJournal, "include_journal must surface the entry, not merely permit it")
+}
+
+// TestJournalExclusionIgnoresURIShape pins decision 2: a document is excluded
+// for what it declares, not for where it sits. The journal entry here is outside
+// any journal directory, and a decision inside one is still returned.
+func TestJournalExclusionIgnoresURIShape(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	write(t, src, "journal/decision.md",
+		"---\ntype: decision\n---\n\n# Decision\n\nthrottle policy at the edge.\n")
+	write(t, src, "adr/turn.md",
+		"---\ntype: Journal\n---\n\n# Turn\n\nthrottle policy came up.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "shape.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "kb",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	engine := search.NewEngine(db, discardLogger())
+	got, err := engine.Search(ctx, search.Query{Text: "throttle", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Contains(t, got[0].URI, "journal/decision.md",
+		"a citable document in a journal-shaped path is still returned")
+}
+
+// TestJournalNotLaunderedThroughGraphExpansion guards the hole the base filter
+// cannot see: graph expansion fetches neighbors on its own, so a journal entry
+// linked from a top hit would re-enter a result set that excluded it.
+func TestJournalNotLaunderedThroughGraphExpansion(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	write(t, src, "adr/seed.md",
+		"---\ntype: decision\n---\n\n# Seed\n\nthrottle policy. See [turn](../journal/turn.md).\n")
+	write(t, src, "journal/turn.md",
+		"---\ntype: Journal\n---\n\n# Turn\n\nunrelated wording entirely.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "launder.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "kb",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	// Expansion only fires when the base query under-fills the limit, which a
+	// limit of 5 against a single lexical hit guarantees.
+	graph := search.NewGraphRetriever(search.NewEngine(db, discardLogger()), db, 3, 0.5, discardLogger())
+	got, err := graph.Search(ctx, search.Query{Text: "throttle", Limit: 5})
+	require.NoError(t, err)
+
+	for _, r := range got {
+		require.NotContains(t, r.URI, "journal/turn.md",
+			"graph expansion must honour the journal exclusion the base query applied")
+	}
+}

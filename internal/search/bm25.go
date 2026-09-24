@@ -115,6 +115,9 @@ func filterClause(q Query) (conds []string, args []any) {
 		conds = append(conds, "d.modified_at >= ?")
 		args = append(args, q.ModifiedSince)
 	}
+	if !q.IncludeJournal {
+		conds = append(conds, "d.journal = 0")
+	}
 	if len(q.ExcludeCollections) > 0 {
 		conds = append(conds, "d.collection NOT IN ("+placeholders(len(q.ExcludeCollections))+")")
 		for _, c := range q.ExcludeCollections {

@@ -21,6 +21,9 @@ type searchInput struct {
 	Type       string `json:"type,omitempty"       jsonschema:"restrict to a file extension, e.g. md"`
 	Since      string `json:"since,omitempty"      jsonschema:"restrict to documents modified at or after this RFC3339 timestamp"`
 	Limit      int    `json:"limit,omitempty"      jsonschema:"maximum number of results (defaults to the configured search limit)"`
+	// The journal holds captured session exchanges: useful for reconstructing what
+	// happened, but not citable knowledge, so it is excluded unless asked for.
+	IncludeJournal bool `json:"include_journal,omitempty" jsonschema:"also search the session journal, which is excluded by default"`
 }
 
 // searchResult is one hit in the mnemos.search response. It mirrors model.Result
@@ -59,12 +62,13 @@ func (s *Server) registerSearch() {
 
 func (s *Server) handleSearch(ctx context.Context, _ *mcpsdk.CallToolRequest, in searchInput) (*mcpsdk.CallToolResult, any, error) {
 	results, err := s.svc.Search(ctx, s.retriever, search.Query{
-		Text:          in.Query,
-		Collection:    in.Collection,
-		PathPrefix:    in.Path,
-		FileType:      in.Type,
-		ModifiedSince: in.Since,
-		Limit:         in.Limit,
+		Text:           in.Query,
+		Collection:     in.Collection,
+		PathPrefix:     in.Path,
+		FileType:       in.Type,
+		ModifiedSince:  in.Since,
+		Limit:          in.Limit,
+		IncludeJournal: in.IncludeJournal,
 	})
 	if err != nil {
 		return nil, nil, err

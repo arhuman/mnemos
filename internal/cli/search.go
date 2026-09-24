@@ -27,6 +27,7 @@ type searchFlags struct {
 	asJSON     bool
 	semantic   bool
 	recent     bool
+	journal    bool
 }
 
 // newSearchCmd builds the `search <query...>` command. The query words are
@@ -51,6 +52,7 @@ func newSearchCmd(state *rootState) *cobra.Command {
 	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit results as a JSON array")
 	cmd.Flags().BoolVar(&f.semantic, "semantic", false, "fuse lexical and vector retrieval (requires -tags embed build and an installed model)")
 	cmd.Flags().BoolVar(&f.recent, "recent", false, "favour recently modified documents (overrides search.temporal_weight for this query)")
+	cmd.Flags().BoolVar(&f.journal, "include-journal", false, "also search the session journal, which is excluded by default")
 
 	return cmd
 }
@@ -73,6 +75,7 @@ func runSearch(cmd *cobra.Command, state *rootState, args []string, f searchFlag
 			Limit:            f.limit,
 			TemporalWeight:   weight,
 			TemporalHalflife: halflife,
+			IncludeJournal:   f.journal,
 		})
 		if err != nil {
 			return err

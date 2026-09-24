@@ -184,6 +184,11 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   prefix, so it stays classified across a move or a rename. Existing databases
   migrate with every row defaulting to non-journal, leaving retrieval unchanged.
   See `docs/adr/0011-journal-tier.md`.
+- Journal tier (search): journal entries are excluded from ranked retrieval by
+  default on every surface, including graph expansion, so transcripts never
+  compete with citable knowledge. Opt in with `mnemos search --include-journal`
+  or the `include_journal` parameter on `mnemos.search`; `read` and `list` are
+  unaffected and still see the journal.
 
 ### Fixed
 - `reindex --embeddings` no longer panics on CRLF text. The sugarme tokenizer's

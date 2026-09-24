@@ -46,6 +46,12 @@ type Query struct {
 	// Now is the instant ages are measured against. The zero value means
 	// time.Now(); tests set it so a decay assertion does not depend on the clock.
 	Now time.Time
+	// IncludeJournal opts into ranked retrieval over the session journal. The
+	// zero value excludes it, which is the default on every surface: transcripts
+	// are indexed and readable but must not compete with citable knowledge in a
+	// result set (ADR-0011). Exclusion keys on the stored journal flag, never on
+	// a uri prefix, so it survives a move or a rename.
+	IncludeJournal bool
 }
 
 // overFetchFactor is how many candidates beyond the requested limit each

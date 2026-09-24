@@ -84,7 +84,7 @@ func (g *GraphRetriever) Search(ctx context.Context, q Query) ([]model.Result, e
 				continue
 			}
 			seen[nuri] = true
-			res, ok := g.neighborResult(ctx, nuri, weight, denied)
+			res, ok := g.neighborResult(ctx, nuri, weight, denied, q.IncludeJournal)
 			if ok {
 				extra = append(extra, res)
 			}
@@ -166,11 +166,21 @@ func (g *GraphRetriever) resolvedNeighborURIs(ctx context.Context, srcURI string
 // score, or (zero, false) when the document is hidden, missing, or has no chunk
 // to cite. The citation is the document's first chunk, since the neighbor did not
 // match the query lexically and has no query-specific best chunk.
-func (g *GraphRetriever) neighborResult(ctx context.Context, uri string, score float64, denied map[string]bool) (model.Result, bool) {
+func (g *GraphRetriever) neighborResult(ctx context.Context, uri string, score float64, denied map[string]bool, includeJournal bool) (model.Result, bool) {
 	doc, err := storage.GetDocumentByURI(ctx, g.db, uri)
 	if err != nil || doc == nil || denied[doc.Collection] {
 		return model.Result{}, false
 	}
+	// Expansion must honour the journal exclusion the base query applied, or a
+	// journal entry linked from a top hit would re-enter a result set that
+	// deliberately excluded it (ADR-0011).
+	if doc.Journal && !includeJournal {
+		return model.Result{}, false
+	}
+	// Expansion must honour the journal exclusion the base query applied, or a
+	// journal entry linked from a top hit would re-enter a result set that
+	// deliberately excluded it (ADR-0011).
+
 	chunk, err := storage.FirstChunkByDocURI(ctx, g.db, uri)
 	if err != nil || chunk == nil {
 		return model.Result{}, false

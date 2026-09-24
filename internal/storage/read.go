@@ -15,7 +15,7 @@ import (
 func GetDocumentByURI(ctx context.Context, db *sql.DB, uri string) (*model.Document, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT id, uri, collection, content_hash, title, mime_type,
-		       size_bytes, modified_at, indexed_at, frontmatter_json
+		       size_bytes, modified_at, indexed_at, frontmatter_json, journal
 		FROM documents WHERE uri = ?
 	`, uri)
 
@@ -36,7 +36,7 @@ func GetDocumentByURI(ctx context.Context, db *sql.DB, uri string) (*model.Docum
 func GetDocumentByID(ctx context.Context, db *sql.DB, id string) (*model.Document, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT id, uri, collection, content_hash, title, mime_type,
-		       size_bytes, modified_at, indexed_at, frontmatter_json
+		       size_bytes, modified_at, indexed_at, frontmatter_json, journal
 		FROM documents WHERE id = ?
 	`, id)
 
@@ -193,7 +193,7 @@ func scanDocument(s scanner) (*model.Document, error) {
 	)
 	if err := s.Scan(
 		&d.ID, &d.URI, &d.Collection, &d.ContentHash, &title, &mimeType,
-		&sizeBytes, &modifiedAt, &indexedAt, &frontmatter,
+		&sizeBytes, &modifiedAt, &indexedAt, &frontmatter, &d.Journal,
 	); err != nil {
 		return nil, err
 	}
