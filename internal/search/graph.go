@@ -176,6 +176,17 @@ func (g *GraphRetriever) neighborResult(ctx context.Context, uri string, score f
 		return model.Result{}, false
 	}
 
+	supersededBy := supersededByOf(doc.FrontmatterJSON)
+	// Resolve the one hop the same way the lexical path does: the replacement is
+	// resolved only when it is itself an ingested document, and never when it is
+	// the document's own uri.
+	resolved := false
+	if supersededBy != "" && supersededBy != doc.URI {
+		if rep, err := storage.GetDocumentByURI(ctx, g.db, supersededBy); err == nil && rep != nil {
+			resolved = true
+		}
+	}
+
 	return model.Result{
 		ID:          chunk.ID,
 		DocumentID:  chunk.DocumentID,
@@ -187,6 +198,9 @@ func (g *GraphRetriever) neighborResult(ctx context.Context, uri string, score f
 		StartLine:   chunk.StartLine,
 		EndLine:     chunk.EndLine,
 		Snippet:     snippet(chunk.Content),
-		Score:       score,
+		Score:       score * supersededFactor(supersededBy),
+
+		SupersededBy:         supersededBy,
+		SupersededByResolved: resolved,
 	}, true
 }

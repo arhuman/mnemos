@@ -15,6 +15,7 @@ import (
 
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/ingest"
+	"github.com/arhuman/mnemos/internal/model"
 	"github.com/arhuman/mnemos/internal/search"
 	"github.com/arhuman/mnemos/internal/storage"
 )
@@ -356,4 +357,171 @@ func TestTemporalRankingTreatsFutureAsCurrent(t *testing.T) {
 	require.Len(t, got, 2)
 	require.InDelta(t, got[0].Score, got[1].Score, 1e-9,
 		"documents dated in the future are all treated as current, so neither wins")
+}
+
+// newSupersessionCorpus ingests three documents that match one term equally:
+// a current document, one superseded by the current one, and one superseded by
+// a uri that was never ingested (a dangling pointer).
+func newSupersessionCorpus(ctx context.Context, t *testing.T) *sql.DB {
+	t.Helper()
+	src := t.TempDir()
+	write(t, src, "adr/current.md",
+		"# Current\n\nquorum policy.\n")
+	write(t, src, "adr/replaced.md",
+		"---\nsuperseded_by: adr/current.md\n---\n\n# Replaced\n\nquorum policy.\n")
+	write(t, src, "adr/dangling.md",
+		"---\nsuperseded_by: adr/never-ingested.md\n---\n\n# Dangling\n\nquorum policy.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "supersede.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "adr",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	return db
+}
+
+// resultFor returns the result whose uri contains want, failing if absent.
+func resultFor(t *testing.T, results []model.Result, want string) model.Result {
+	t.Helper()
+	for _, r := range results {
+		if strings.Contains(r.URI, want) {
+			return r
+		}
+	}
+	t.Fatalf("no result for %q in %d results", want, len(results))
+
+	return model.Result{}
+}
+
+// TestSupersededDocumentIsDemotedNotHidden is the core of ADR-0010: a superseded
+// document still returns and still cites, but ranks below its replacement.
+func TestSupersededDocumentIsDemotedNotHidden(t *testing.T) {
+	ctx := context.Background()
+	db := newSupersessionCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "quorum", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, got, 3, "a superseded document must still be returned, never filtered out")
+	require.Contains(t, got[0].URI, "current.md", "the current document outranks both superseded ones")
+
+	replaced := resultFor(t, got, "replaced.md")
+	require.Greater(t, replaced.Score, 0.0, "a demoted document keeps a usable score, it is not zeroed")
+	require.Less(t, replaced.Score, got[0].Score)
+	require.NotEmpty(t, replaced.Snippet, "a demoted document stays citable")
+}
+
+// TestSupersededByTravelsWithTheResult covers ADR-0010 decision 1: the caller
+// that cites a superseded document receives the replacement in the same payload.
+func TestSupersededByTravelsWithTheResult(t *testing.T) {
+	ctx := context.Background()
+	db := newSupersessionCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "quorum", Limit: 10})
+	require.NoError(t, err)
+
+	replaced := resultFor(t, got, "replaced.md")
+	require.Equal(t, "adr/current.md", replaced.SupersededBy)
+	require.True(t, replaced.SupersededByResolved)
+
+	current := resultFor(t, got, "current.md")
+	require.Empty(t, current.SupersededBy, "a current document carries no pointer")
+	require.False(t, current.SupersededByResolved)
+}
+
+// TestSupersededByDanglingReportsUnresolved pins the degradation rule: a
+// replacement that is not in the index reports unresolved rather than erroring
+// or dropping the marker.
+func TestSupersededByDanglingReportsUnresolved(t *testing.T) {
+	ctx := context.Background()
+	db := newSupersessionCorpus(ctx, t)
+	engine := search.NewEngine(db, discardLogger())
+
+	got, err := engine.Search(ctx, search.Query{Text: "quorum", Limit: 10})
+	require.NoError(t, err)
+
+	dangling := resultFor(t, got, "dangling.md")
+	require.Equal(t, "adr/never-ingested.md", dangling.SupersededBy,
+		"the marker survives even when its target does not resolve")
+	require.False(t, dangling.SupersededByResolved)
+
+	// A dangling pointer still demotes: a human recorded that this was replaced,
+	// and that judgment is not void because the replacement is missing.
+	current := resultFor(t, got, "current.md")
+	require.Less(t, dangling.Score, current.Score)
+}
+
+// TestSupersededSelfReferenceReportsUnresolved covers the cycle guard: a
+// document naming itself must not be marked its own resolved replacement.
+func TestSupersededSelfReferenceReportsUnresolved(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	write(t, src, "adr/loop.md",
+		"---\nsuperseded_by: adr/loop.md\n---\n\n# Loop\n\nquorum policy.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "selfref.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "adr",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	engine := search.NewEngine(db, discardLogger())
+	got, err := engine.Search(ctx, search.Query{Text: "quorum", Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "adr/loop.md", got[0].SupersededBy)
+	require.False(t, got[0].SupersededByResolved,
+		"a self-reference is a data error: reported, never obeyed as a resolved replacement")
+}
+
+// TestSupersededDemotionComposesWithRecency checks the two multipliers stack
+// rather than one overriding the other: a recent-but-superseded document must
+// lose to a current one of the same age.
+func TestSupersededDemotionComposesWithRecency(t *testing.T) {
+	ctx := context.Background()
+	src := t.TempDir()
+	write(t, src, "adr/fresh-current.md",
+		"---\ntimestamp: 2026-09-01T00:00:00Z\n---\n\n# Fresh Current\n\nquorum policy.\n")
+	write(t, src, "adr/fresh-superseded.md",
+		"---\ntimestamp: 2026-09-01T00:00:00Z\nsuperseded_by: adr/fresh-current.md\n---\n\n"+
+			"# Fresh Superseded\n\nquorum policy.\n")
+
+	db, err := storage.Open(ctx, filepath.Join(t.TempDir(), "compose.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, storage.Migrate(db))
+	_, err = ingest.New(db, discardLogger()).Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "adr",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   chunk.Config{TargetTokens: 700, OverlapTokens: 80},
+	})
+	require.NoError(t, err)
+
+	now, err := time.Parse(time.RFC3339, "2026-09-02T00:00:00Z")
+	require.NoError(t, err)
+
+	engine := search.NewEngine(db, discardLogger())
+	got, err := engine.Search(ctx, search.Query{
+		Text: "quorum", Limit: 10, TemporalWeight: 1, Now: now,
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Contains(t, got[0].URI, "fresh-current.md",
+		"equally recent, the superseded one must still lose")
 }

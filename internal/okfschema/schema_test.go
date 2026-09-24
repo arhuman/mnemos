@@ -56,3 +56,23 @@ func TestCycle(t *testing.T) {
 	text := okfschema.FieldSchemaFor("task", "title")
 	require.Equal(t, "unchanged", text.Cycle("unchanged", 1), "a non-enum field does not cycle")
 }
+
+// TestSupersededByIsFreeTextNotAnEnum pins the field kind: the valid values are
+// every uri in the tree, so an editor must offer free text rather than a closed
+// list it would have to invent.
+func TestSupersededByIsFreeTextNotAnEnum(t *testing.T) {
+	for _, docType := range []string{"task", "decision", "", "unknown-type"} {
+		got := okfschema.FieldSchemaFor(docType, okfschema.SupersededByKey)
+		require.Equal(t, okfschema.KindText, got.Kind,
+			"superseded_by must be free text on %q", docType)
+		require.Empty(t, got.Enum)
+	}
+}
+
+// TestSupersededByIsNotIndexOwned guards against it being classified read-only:
+// a human marks a document superseded by hand, so the editor must allow it.
+func TestSupersededByIsNotIndexOwned(t *testing.T) {
+	got := okfschema.FieldSchemaFor("decision", okfschema.SupersededByKey)
+	require.NotEqual(t, okfschema.KindReadOnly, got.Kind,
+		"supersession is a human judgment, not a field the pipeline owns")
+}

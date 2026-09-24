@@ -172,6 +172,13 @@ pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind th
   `temporal_halflife` (default `168h`). Off by default, so an unconfigured search
   ranks exactly as before. A document the indexer could not date, or one dated in
   the future, keeps its score rather than being buried.
+- Supersession: a document carrying `superseded_by: <uri>` in its frontmatter is
+  demoted in ranking, never hidden or deleted, and every hit carries the
+  replacement uri plus whether it resolves to an indexed document. Resolution
+  follows exactly one hop; a dangling target or a self-reference reports
+  unresolved rather than erroring. Demotion also applies to documents reached
+  through graph expansion, so it cannot be bypassed by arriving as a link
+  neighbor. See `docs/adr/0010-supersession-semantics.md`.
 
 ### Fixed
 - `reindex --embeddings` no longer panics on CRLF text. The sugarme tokenizer's

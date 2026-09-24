@@ -143,12 +143,26 @@ func searchSQL(filterConds []string) string {
 		`COALESCE(d.title, ''), COALESCE(d.modified_at, ''), ` +
 		`COALESCE(c.heading_path, ''), c.start_line, c.end_line, ` +
 		`snippet(chunks_fts, 0, '[', ']', ' … ', 12) AS snip, ` +
+		// superseded_by is read from the raw frontmatter, guarded by json_valid so
+		// a row holding non-JSON (or NULL) yields NULL rather than an error, the
+		// same guard the list filters use. sup.uri is non-NULL only when the named
+		// replacement is itself an ingested document, which is exactly the
+		// resolved/dangling distinction ADR-0010 requires.
+		`COALESCE(CASE WHEN json_valid(d.frontmatter_json) ` +
+		`THEN json_extract(d.frontmatter_json, '$.superseded_by') END, '') AS superseded_by, ` +
+		`CASE WHEN sup.uri IS NULL THEN 0 ELSE 1 END AS superseded_resolved, ` +
 		`bm25(chunks_fts, `)
 	_, _ = b.WriteString(formatWeights())
 	_, _ = b.WriteString(`) AS rank ` +
 		`FROM chunks_fts ` +
 		`JOIN chunks c ON c.rowid = chunks_fts.rowid ` +
 		`JOIN documents d ON d.id = c.document_id ` +
+		// One hop, never a chain: sup is joined on the uri d names, and sup's own
+		// superseded_by is not followed. A self-reference is excluded here so it
+		// reports unresolved rather than marking a document its own replacement.
+		`LEFT JOIN documents sup ON sup.uri = CASE WHEN json_valid(d.frontmatter_json) ` +
+		`THEN json_extract(d.frontmatter_json, '$.superseded_by') END ` +
+		`AND sup.uri <> d.uri ` +
 		`WHERE chunks_fts MATCH ?`)
 	for _, cond := range filterConds {
 		_, _ = b.WriteString(" AND ")

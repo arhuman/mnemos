@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/arhuman/mnemos/internal/model"
+	"github.com/arhuman/mnemos/internal/okfschema"
 )
 
 // Retriever is the retrieval seam: a query in, ranked results out. The FTS5
@@ -85,7 +87,8 @@ func (e *Engine) Search(ctx context.Context, q Query) ([]model.Result, error) {
 		var rank float64
 		if err := rows.Scan(
 			&r.ID, &r.DocumentID, &r.URI, &r.Collection, &r.Title, &r.ModifiedAt,
-			&r.HeadingPath, &r.StartLine, &r.EndLine, &r.Snippet, &rank,
+			&r.HeadingPath, &r.StartLine, &r.EndLine, &r.Snippet,
+			&r.SupersededBy, &r.SupersededByResolved, &rank,
 		); err != nil {
 			return nil, fmt.Errorf("search: scan row: %w", err)
 		}
@@ -98,7 +101,8 @@ func (e *Engine) Search(ctx context.Context, q Query) ([]model.Result, error) {
 		}
 		// SQLite bm25() is negative with more-negative = better; flip it so the
 		// displayed score is positive and higher = better.
-		r.Score = (-rank + headingScore(r.HeadingPath, terms)) * recencyFactor(r.ModifiedAt, q, now)
+		r.Score = (-rank + headingScore(r.HeadingPath, terms)) *
+			recencyFactor(r.ModifiedAt, q, now) * supersededFactor(r.SupersededBy)
 		results = append(results, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -175,5 +179,46 @@ func recencyFactor(modifiedAt string, q Query, now time.Time) float64 {
 	return 1 - w + w*decay
 }
 
+// supersededDemotion is the multiplier applied to a document that names a
+// replacement. It is well below 1 so a superseded document loses to its
+// replacement on any comparable match, and strictly above 0 so it still ranks,
+// still returns, and stays citable: ADR-0010 demotes, it never hides.
+const supersededDemotion = 0.25
+
+// supersededFactor returns the multiplier a document's supersession applies to
+// its score. It keys on the pointer being present rather than on it resolving:
+// a dangling superseded_by still means a human recorded that this document was
+// replaced, and that judgment does not become void because the replacement is
+// missing from the index.
+func supersededFactor(supersededBy string) float64 {
+	if supersededBy == "" {
+		return 1
+	}
+
+	return supersededDemotion
+}
+
 // compile-time assertion that Engine satisfies Retriever.
 var _ Retriever = (*Engine)(nil)
+
+// supersededByOf extracts the superseded_by uri from a document's raw
+// frontmatter JSON, returning "" when the frontmatter is absent, not valid JSON,
+// or carries no such key. It exists because the graph retriever builds results
+// from stored documents rather than from the lexical SQL, and ADR-0010 requires
+// supersession to apply on that path too: a superseded document must not be able
+// to launder its demotion by arriving as a link neighbor.
+func supersededByOf(frontmatterJSON string) string {
+	if frontmatterJSON == "" {
+		return ""
+	}
+	var fm map[string]any
+	if err := json.Unmarshal([]byte(frontmatterJSON), &fm); err != nil {
+		return ""
+	}
+	v, ok := fm[okfschema.SupersededByKey].(string)
+	if !ok {
+		return ""
+	}
+
+	return strings.TrimSpace(v)
+}

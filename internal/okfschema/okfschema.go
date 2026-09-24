@@ -53,6 +53,12 @@ var registry = map[string]TypeSchema{
 // retyping one in an editor would desynchronize it from the index.
 var systemKeys = []string{"type", "collection", "timestamp"}
 
+// SupersededByKey is the frontmatter key naming the document that replaces this
+// one. It is a uri relative to the kb root, the same address space as a link
+// target, and is free text rather than an enum: the set of valid values is every
+// document in the tree (ADR-0010).
+const SupersededByKey = "superseded_by"
+
 // FieldSchemaFor returns how key should be edited on a document of docType. An
 // unknown type or an unlisted key falls back on the key alone: tag lists for
 // "tags", read-only for the system keys, free text otherwise — so an editor

@@ -138,4 +138,14 @@ type Result struct {
 	EndLine     int     `json:"end_line"`
 	Snippet     string  `json:"snippet"`
 	Score       float64 `json:"score"`
+	// SupersededBy is the uri named by this document's `superseded_by`
+	// frontmatter key, empty when the document is current. It travels with the
+	// result so a caller that cites a superseded document receives, in the same
+	// payload, the pointer to what replaced it (ADR-0010).
+	SupersededBy string `json:"superseded_by,omitempty"`
+	// SupersededByResolved reports whether SupersededBy names an ingested
+	// document. False with a non-empty SupersededBy is a dangling pointer: the
+	// document is superseded but the replacement is not in the index. It mirrors
+	// Neighbor.Resolved rather than erroring or dropping the marker.
+	SupersededByResolved bool `json:"superseded_by_resolved,omitempty"`
 }

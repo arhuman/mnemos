@@ -35,6 +35,13 @@ type searchResult struct {
 	EndLine     int     `json:"end_line"`
 	Snippet     string  `json:"snippet"`
 	Score       float64 `json:"score"`
+	// SupersededBy names the document that replaces this one, omitted when the
+	// document is current. It travels with the hit so an agent that cites a
+	// superseded document has the replacement in the same payload (ADR-0010).
+	SupersededBy string `json:"superseded_by,omitempty"`
+	// SupersededByResolved is false when SupersededBy names a document that is
+	// not in the index: superseded, replacement unknown.
+	SupersededByResolved bool `json:"superseded_by_resolved,omitempty"`
 }
 
 // searchOutput is the mnemos.search response wrapping the ranked results.
@@ -88,6 +95,9 @@ func toSearchResult(r model.Result) searchResult {
 		EndLine:     r.EndLine,
 		Snippet:     r.Snippet,
 		Score:       roundScore(r.Score),
+
+		SupersededBy:         r.SupersededBy,
+		SupersededByResolved: r.SupersededByResolved,
 	}
 }
 
