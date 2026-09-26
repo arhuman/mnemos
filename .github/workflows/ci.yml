@@ -16,23 +16,51 @@ jobs:
   commit-format:
     name: commit format (dependency-free commitlint equivalent)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Check Conventional Commits format in PR
+      - name: Check Conventional Commits format
+        env:
+          # A force-push or a brand-new branch reports an all-zero "before" sha,
+          # and a deleted branch reports an all-zero "after": neither names a
+          # usable range, so the range resolution below falls back to the single
+          # head commit rather than diffing against a sha git does not have.
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           # Regex pattern: type(scope)?: subject (matches release.sh)
           pattern='^[a-z]+(\([^)]*\))?!?:'
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
 
-          # Get all commits in the PR, excluding merge commits
-          commits=$(git log --no-merges --format='%H %s' "$base..$head")
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            range="$base..$head"
+          else
+            head="${{ github.sha }}"
+            # Zeroes, empty, or a sha absent from this clone (force-push
+            # rewrote it) all mean "no reliable predecessor": check the tip only.
+            if [ -z "$PUSH_BEFORE" ] ||
+               [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ] ||
+               ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+              range="$head~1..$head"
+              # A root commit has no parent, so even that range is invalid.
+              git rev-parse --verify --quiet "$head~1" >/dev/null || range="$head"
+            else
+              range="$PUSH_BEFORE..$head"
+            fi
+          fi
+
+          # Get all commits in the range, excluding merge commits
+          if [ "$range" = "$head" ]; then
+            commits=$(git log --no-merges --format='%H %s' -1 "$head")
+          else
+            commits=$(git log --no-merges --format='%H %s' "$range")
+          fi
+
+          echo "Checking range: $range"
 
           if [ -z "$commits" ]; then
-            echo "No commits found in range $base..$head"
+            echo "No commits found in range $range"
             exit 0
           fi
 
