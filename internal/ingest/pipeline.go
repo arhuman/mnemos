@@ -1,8 +1,10 @@
 // Package ingest implements the V0 ingestion pipeline: discover files, hash
 // them, skip unchanged ones, parse, chunk, and write documents/chunks/links and
 // an event in a single transaction per document. Parse and chunk run in a
-// bounded worker pool; all writes are funneled through one writer because the
-// SQLite handle is single-connection (one writer).
+// bounded worker pool; all writes are funneled through one writer goroutine
+// because SQLite admits a single writer under WAL, so concurrent write
+// transactions would serialize on the file lock (or fail on busy) rather than
+// proceed. Reads are not funneled: the storage pool serves them concurrently.
 package ingest
 
 import (

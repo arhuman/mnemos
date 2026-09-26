@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"runtime"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver, registered as "sqlite"
 )
@@ -33,6 +34,12 @@ var pragmas = []string{
 	"synchronous(NORMAL)",
 }
 
+// maxOpenConns caps the pool. WAL permits one writer plus concurrent readers, so
+// the cap exists to bound resource use, not to protect correctness: writes are
+// already serialized by SQLite itself and, on the ingest path, by a single writer
+// goroutine. It is deliberately small because the workload is one local process.
+var maxOpenConns = min(runtime.GOMAXPROCS(0), 8)
+
 // dsn builds the connection string carrying the pragmas. The path is escaped as a
 // URI so a database whose path contains '?' or '#' cannot truncate or inject
 // query parameters.
@@ -41,6 +48,15 @@ func dsn(path string) string {
 	for _, p := range pragmas {
 		q.Add("_pragma", p)
 	}
+
+	// _txlock=immediate makes BeginTx issue BEGIN IMMEDIATE, taking the write lock
+	// up front. The write path reads before it writes (UpsertDocument deletes a
+	// superseded row first), so a deferred transaction would take a read snapshot
+	// and then fail to upgrade with SQLITE_BUSY_SNAPSHOT (517) whenever a second
+	// writer holds the lock: a failure busy_timeout cannot absorb, because no wait
+	// can resolve it. Explicit transactions are therefore for writing only; see
+	// ADR-0012.
+	q.Set("_txlock", "immediate")
 
 	return "file:" + (&url.URL{Path: path}).EscapedPath() + "?" + q.Encode()
 }
@@ -53,10 +69,7 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage: open %q: %w", path, err)
 	}
-	// Kept at one connection: the DSN makes the pragmas hold on every connection,
-	// but enabling the pool is a separate change (it regresses the watcher's
-	// moved-in directory sweep) and is tracked on its own.
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(maxOpenConns)
 
 	// sql.Open is lazy: it validates neither the path nor the pragmas. Force one
 	// connection now so a bad path or a rejected pragma is reported here rather

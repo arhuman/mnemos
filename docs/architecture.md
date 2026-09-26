@@ -101,6 +101,14 @@ fixed subpaths of one **MNEMOS_DIR**, resolved by `workspace` (see
   semantic/hybrid retrieval is layered on top, not a replacement.
 - **Local-first and safe by default.** stdio-only MCP, read-only unless opted in,
   path confinement, and secret scanning. See [SECURITY.md](../SECURITY.md).
+- **One writer, many readers.** WAL admits a single writer alongside concurrent
+  readers, so the ingest pipeline funnels writes through one goroutine while the
+  connection pool serves reads in parallel. The MCP server handles each request
+  on its own goroutine, so a slow query (a vector scan, say) no longer blocks
+  every other tool call behind one shared connection. `synchronous=NORMAL` is the
+  standard WAL setting: it can lose the last commits on power loss but never
+  corrupts the file, and it drops the per-commit fsync that the one-transaction-
+  per-document ingest would otherwise pay on every file.
 
 For the rationale behind specific decisions, see the [ADRs](adr/).
 
