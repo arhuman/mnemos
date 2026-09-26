@@ -64,7 +64,7 @@ jobs:
       matrix:
         # Floor is the go.mod minimum; "stable" is the latest release, which is
         # also what release.yml builds shipped binaries with (security patches).
-        go: ["1.25", "stable"]
+        go: ["1.26", "stable"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
