@@ -146,3 +146,42 @@ func TestAppendEventCascadesOnDocumentDelete(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM events WHERE id = 'e2'`).Scan(&orphan))
 	require.Equal(t, 1, orphan)
 }
+
+func TestUpsertDocumentReplacesRowWhenIDChanges(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrated(t)
+
+	old := model.Document{ID: "idA", URI: "note.md", Collection: "a", ContentHash: "h1", IndexedAt: "t1"}
+	inTx(t, db, func(tx *sql.Tx) {
+		require.NoError(t, storage.UpsertDocument(ctx, tx, old))
+		require.NoError(t, storage.ReplaceChunks(ctx, tx, "idA", []model.Chunk{
+			{ID: "cA", DocumentID: "idA", Ordinal: 0, Content: "alpha"},
+		}))
+	})
+
+	// Same uri, new collection: the id is derived from collection+uri, so the
+	// stored row must adopt the new id or the caller's chunk writes hit the FK.
+	next := model.Document{ID: "idB", URI: "note.md", Collection: "b", ContentHash: "h2", IndexedAt: "t2"}
+	inTx(t, db, func(tx *sql.Tx) {
+		require.NoError(t, storage.UpsertDocument(ctx, tx, next))
+		require.NoError(t, storage.ReplaceChunks(ctx, tx, "idB", []model.Chunk{
+			{ID: "cB", DocumentID: "idB", Ordinal: 0, Content: "beta"},
+		}))
+	})
+
+	var id, collection string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT id, collection FROM documents WHERE uri = ?`, "note.md").Scan(&id, &collection))
+	require.Equal(t, "idB", id)
+	require.Equal(t, "b", collection)
+
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents`).Scan(&n))
+	require.Equal(t, 1, n)
+
+	// The superseded row's chunks are gone with it; only the new id's remain.
+	var stale int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks WHERE document_id = ?`, "idA").Scan(&stale))
+	require.Equal(t, 0, stale)
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks WHERE document_id = ?`, "idB").Scan(&n))
+	require.Equal(t, 1, n)
+}

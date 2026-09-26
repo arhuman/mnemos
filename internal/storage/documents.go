@@ -57,8 +57,22 @@ func CountInboundLinks(ctx context.Context, db *sql.DB, dstURI string) (int, err
 
 // UpsertDocument inserts or updates a document by uri within tx. On conflict it
 // refreshes the mutable fields (hash, title, sizes, timestamps, frontmatter)
-// and re-stamps indexed_at, keeping the existing id stable.
+// and re-stamps indexed_at.
+//
+// The id travels with the row: document ids are derived from collection + uri,
+// so re-ingesting a uri under a different collection mints a new id. The stored
+// row must adopt it, otherwise the caller's chunk, link, and event writes
+// reference an id no documents row carries and fail the foreign key. Adopting it
+// means dropping the superseded row first, which cascades its chunks, links, and
+// events away, so the caller must write the new ones in the same tx (ingest
+// does: upsert, then ReplaceChunks/ReplaceLinks/AppendEvent).
 func UpsertDocument(ctx context.Context, tx *sql.Tx, d model.Document) error {
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM documents WHERE uri = ? AND id <> ?`, d.URI, d.ID,
+	); err != nil {
+		return fmt.Errorf("storage: evict superseded document %q: %w", d.URI, err)
+	}
+
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO documents (
 			id, uri, collection, content_hash, title, mime_type,
