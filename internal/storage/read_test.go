@@ -154,22 +154,23 @@ func TestGetChunksByDocURIOrdered(t *testing.T) {
 	})
 }
 
-func TestListURIsByCollection(t *testing.T) {
+func TestListURIs(t *testing.T) {
 	db := openMigrated(t)
+
+	t.Run("empty store is empty", func(t *testing.T) {
+		got, err := storage.ListURIs(context.Background(), db)
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+
 	seedDoc(t, db, model.Document{ID: "d1", URI: "a.md", Collection: "alpha", ContentHash: "h", IndexedAt: "t"}, nil, nil)
 	seedDoc(t, db, model.Document{ID: "d2", URI: "b.md", Collection: "alpha", ContentHash: "h", IndexedAt: "t"}, nil, nil)
 	seedDoc(t, db, model.Document{ID: "d3", URI: "c.md", Collection: "beta", ContentHash: "h", IndexedAt: "t"}, nil, nil)
 
-	t.Run("filters by collection", func(t *testing.T) {
-		got, err := storage.ListURIsByCollection(context.Background(), db, "alpha")
+	t.Run("returns every uri across collections", func(t *testing.T) {
+		got, err := storage.ListURIs(context.Background(), db)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{"a.md", "b.md"}, got)
-	})
-
-	t.Run("unknown collection is empty", func(t *testing.T) {
-		got, err := storage.ListURIsByCollection(context.Background(), db, "gamma")
-		require.NoError(t, err)
-		require.Empty(t, got)
+		require.ElementsMatch(t, []string{"a.md", "b.md", "c.md"}, got)
 	})
 }
 
@@ -228,7 +229,7 @@ func TestAccessorsErrorOnClosedDB(t *testing.T) {
 	require.Error(t, err)
 	_, err = storage.GetChunksByDocURI(context.Background(), db, "a.md")
 	require.Error(t, err)
-	_, err = storage.ListURIsByCollection(context.Background(), db, "c")
+	_, err = storage.ListURIs(context.Background(), db)
 	require.Error(t, err)
 	require.Error(t, storage.DeleteByURI(context.Background(), db, "a.md"))
 }

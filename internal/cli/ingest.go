@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -40,10 +41,18 @@ func runIngest(cmd *cobra.Command, state *rootState, path, collection string) er
 			return fmt.Errorf("ingest: %w; copy the content into the tree first, then ingest it from there", err)
 		}
 
+		// Reconcile only a directory ingest. A single-file root proves nothing about
+		// its siblings, and a file passed explicitly is an add, not a sync.
+		info, err := os.Stat(scanRoot)
+		if err != nil {
+			return fmt.Errorf("ingest: %w", err)
+		}
+
 		opts := ingest.Options{
 			Root:       scanRoot,
 			URIBase:    a.TreeRoot(), // URIs are always relative to the kb root
 			Collection: collection,
+			Reconcile:  info.IsDir(),
 			Rules: ingest.Rules{
 				Include:         a.Config.Indexing.Include,
 				Exclude:         a.Config.Indexing.Exclude,
@@ -62,6 +71,9 @@ func runIngest(cmd *cobra.Command, state *rootState, path, collection string) er
 		_, _ = fmt.Fprintf(out, "files scanned:   %d\n", summary.FilesScanned)
 		_, _ = fmt.Fprintf(out, "files ingested:  %d\n", summary.FilesIngested)
 		_, _ = fmt.Fprintf(out, "files skipped:   %d\n", summary.FilesSkipped)
+		if summary.FilesRemoved > 0 {
+			_, _ = fmt.Fprintf(out, "files removed:   %d (backing file gone)\n", summary.FilesRemoved)
+		}
 		_, _ = fmt.Fprintf(out, "chunks written:  %d\n", summary.ChunksWritten)
 
 		return nil

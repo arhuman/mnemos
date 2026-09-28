@@ -3,6 +3,8 @@ package doctor_test
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -167,3 +169,60 @@ func TestRunEmptyStore(t *testing.T) {
 }
 
 func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
+
+// TestMissingFileDetected proves an indexed document whose file is gone is
+// reported, so a deleted file stops looking like a trustworthy citation (#42).
+func TestMissingFileDetected(t *testing.T) {
+	db := testutil.NewDB(t)
+	kb := t.TempDir()
+	ref := `{"type":"Reference"}`
+
+	require.NoError(t, os.WriteFile(filepath.Join(kb, "live.md"), []byte("body"), 0o600))
+	seed(t, db, doc("live", "live.md", "H1", ref, 10), bodyChunk("live"), nil)
+	seed(t, db, doc("gone", "gone.md", "H2", ref, 10), bodyChunk("gone"), nil)
+
+	findings, err := doctor.Run(context.Background(), db, doctor.Options{KBRoot: kb})
+	require.NoError(t, err)
+
+	missing := byCategory(findings, doctor.CategoryMissingFile)
+	require.Len(t, missing, 1)
+	require.Equal(t, []string{"gone.md"}, missing[0].URIs)
+	require.Equal(t, doctor.SeverityWarn, missing[0].Severity)
+}
+
+// TestMissingFileDetectsDanglingSymlink proves the link case: the link file is
+// present on disk but its target is gone, so Stat (not Lstat) must report it.
+func TestMissingFileDetectsDanglingSymlink(t *testing.T) {
+	db := testutil.NewDB(t)
+	kb := t.TempDir()
+	ext := t.TempDir()
+
+	target := filepath.Join(ext, "note.md")
+	require.NoError(t, os.WriteFile(target, []byte("body"), 0o600))
+	link := filepath.Join(kb, "note.md")
+	require.NoError(t, os.Symlink(target, link))
+	seed(t, db, doc("n", "note.md", "H", `{"type":"Reference"}`, 10), bodyChunk("n"), nil)
+
+	findings, err := doctor.Run(context.Background(), db, doctor.Options{KBRoot: kb})
+	require.NoError(t, err)
+	require.Empty(t, byCategory(findings, doctor.CategoryMissingFile), "a live link is not a finding")
+
+	require.NoError(t, os.Remove(target))
+
+	findings, err = doctor.Run(context.Background(), db, doctor.Options{KBRoot: kb})
+	require.NoError(t, err)
+	missing := byCategory(findings, doctor.CategoryMissingFile)
+	require.Len(t, missing, 1)
+	require.Equal(t, []string{"note.md"}, missing[0].URIs)
+}
+
+// TestMissingFileSkippedWithoutKBRoot proves the filesystem check is opt-in, so a
+// caller that only has an index keeps a purely index-driven run.
+func TestMissingFileSkippedWithoutKBRoot(t *testing.T) {
+	db := testutil.NewDB(t)
+	seed(t, db, doc("gone", "gone.md", "H", `{"type":"Reference"}`, 10), bodyChunk("gone"), nil)
+
+	findings, err := doctor.Run(context.Background(), db, doctor.Options{})
+	require.NoError(t, err)
+	require.Empty(t, byCategory(findings, doctor.CategoryMissingFile))
+}

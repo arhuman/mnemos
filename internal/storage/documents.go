@@ -129,13 +129,14 @@ func execDeleteByURI(ctx context.Context, e execer, uri string) error {
 	return nil
 }
 
-// ListURIsByCollection returns every documents.uri in the given collection,
-// unordered. The watcher uses it during startup reconcile to find documents
-// whose backing file has disappeared from disk.
-func ListURIsByCollection(ctx context.Context, db *sql.DB, collection string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `SELECT uri FROM documents WHERE collection = ?`, collection)
+// ListURIs returns every documents.uri in the store, unordered. Reconcile uses
+// it to find documents whose backing file has disappeared from disk; it filters
+// by path prefix in Go rather than SQL because a LIKE prefix is not
+// segment-aware ("adr" would match "adr-archive/x.md").
+func ListURIs(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT uri FROM documents`)
 	if err != nil {
-		return nil, fmt.Errorf("storage: list uris for collection %q: %w", collection, err)
+		return nil, fmt.Errorf("storage: list uris: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -143,12 +144,12 @@ func ListURIsByCollection(ctx context.Context, db *sql.DB, collection string) ([
 	for rows.Next() {
 		var uri string
 		if err := rows.Scan(&uri); err != nil {
-			return nil, fmt.Errorf("storage: scan uri for collection %q: %w", collection, err)
+			return nil, fmt.Errorf("storage: scan uri: %w", err)
 		}
 		uris = append(uris, uri)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("storage: iterate uris for collection %q: %w", collection, err)
+		return nil, fmt.Errorf("storage: iterate uris: %w", err)
 	}
 
 	return uris, nil

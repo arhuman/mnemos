@@ -2,16 +2,23 @@
 // returns structured findings. It never mutates the store or the files: it is the
 // diagnosis half of the consolidation story (see ADR 0006), and the Finding
 // vocabulary it emits is what a human (the `doctor` CLI) or, later, an agent (an
-// MCP tool) acts on. All detectors are deterministic and driven by the index, so
-// a run is cheap and repeatable.
+// MCP tool) acts on. All detectors are deterministic and repeatable.
+//
+// Detectors are index-driven with one exception: missingFiles stats each
+// document's backing file when Options.KBRoot is set, because an index cannot
+// know that a file was deleted behind its back (#42). That detector is the only
+// one that touches the filesystem, and it is opt-in through KBRoot.
 package doctor
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -40,6 +47,9 @@ const (
 	CategoryOversized  = "oversized"
 	CategoryTagHygiene = "tag-hygiene"
 	CategoryStructure  = "structure"
+	// CategoryMissingFile marks an indexed document whose backing file is gone, so
+	// search would still cite line ranges into a file that no longer exists.
+	CategoryMissingFile = "missing-file"
 
 	SeverityWarn = "warn"
 	SeverityInfo = "info"
@@ -62,6 +72,10 @@ type Options struct {
 	// not appear in them. Callers should not set this directly: memory.Diagnose
 	// populates it from the server-side visibility config.
 	ExcludeCollections []string
+	// KBRoot is the directory document URIs resolve against. Setting it enables the
+	// missing-file detector, the one check that reads the filesystem. Empty skips
+	// that detector, keeping a run purely index-driven.
+	KBRoot string
 }
 
 // Run executes every detector against the store and returns the findings, grouped
@@ -95,8 +109,41 @@ func Run(ctx context.Context, db *sql.DB, opts Options) ([]Finding, error) {
 	findings = append(findings, oversized(digests, opts.MaxBytes)...)
 	findings = append(findings, tagHygiene(digests)...)
 	findings = append(findings, structuralGaps(digests, scopePrefix(chunkless, opts.PathPrefix))...)
+	findings = append(findings, missingFiles(digests, opts.KBRoot)...)
 
 	return findings, nil
+}
+
+// missingFiles reports indexed documents whose backing file no longer exists. It
+// is the only detector that stats the filesystem, because a deleted file leaves
+// the index untouched: search keeps returning the document and citing line ranges
+// into a file that is gone, which is worse than a missing result for a tool whose
+// claim is a verifiable citation (#42).
+//
+// kbRoot empty disables the check. os.Stat (not Lstat) resolves symlinks, so a
+// link whose target was deleted is reported even though the link itself remains.
+// Only ErrNotExist counts: a permission error says nothing about existence and
+// must not be reported as a deletion.
+func missingFiles(digests []storage.DocumentDigest, kbRoot string) []Finding {
+	if kbRoot == "" {
+		return nil
+	}
+	var out []Finding
+	for _, d := range digests {
+		abs := filepath.Join(kbRoot, filepath.FromSlash(d.URI))
+		if _, err := os.Stat(abs); errors.Is(err, os.ErrNotExist) {
+			out = append(out, Finding{
+				Category:   CategoryMissingFile,
+				Severity:   SeverityWarn,
+				Title:      d.URI + " is indexed but its file is gone",
+				Detail:     "search still returns this document and cites line ranges into a file that no longer exists",
+				URIs:       []string{d.URI},
+				Suggestion: "run 'mnemos reindex --content' to evict it, or restore the file",
+			})
+		}
+	}
+
+	return out
 }
 
 // exactDuplicates groups documents by content_hash; any group of two or more is a

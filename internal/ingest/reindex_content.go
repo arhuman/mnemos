@@ -25,9 +25,13 @@ type ReindexContentSummary struct {
 	Reindexed int
 	// Skipped is how many prepare declined (binary/oversize/unparseable on disk).
 	Skipped int
-	// Missing is how many had no readable backing file (deleted or moved); their
-	// existing index rows are left untouched, not removed.
+	// Missing is how many had no readable backing file (unreadable, e.g. a
+	// permission error). A file that is simply gone is evicted by the reconcile
+	// pass instead and counted in Removed.
 	Missing int
+	// Removed is how many documents were evicted because their backing file no
+	// longer exists on disk.
+	Removed int
 	// Chunks is the total chunks rewritten across reindexed documents.
 	Chunks int
 }
@@ -38,23 +42,38 @@ type ReindexContentSummary struct {
 // editing files. It walks the documents table rather than the filesystem, so each
 // document keeps its stored collection and only indexed documents are touched.
 //
-// A document whose file is gone from disk is left in place with a warning (a
-// content reindex refreshes, it does not reconcile deletions). Rewriting a
-// document's chunks cascades away its stored embeddings (they key on chunk id);
-// callers that use semantic search should run `reindex --embeddings` afterwards.
+// A document whose file no longer exists is evicted, so a reindex converges the
+// index onto what is on disk instead of leaving a deleted file citable (#42). An
+// unreadable-but-present file is left in place with a warning. If kbRoot itself is
+// unreadable the whole pass fails without evicting anything, because absence
+// below an unreadable root proves nothing.
+//
+// Rewriting a document's chunks cascades away its stored embeddings (they key on
+// chunk id); callers that use semantic search should run `reindex --embeddings`
+// afterwards.
 func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.Config) (ReindexContentSummary, error) {
+	// Reconcile first so a deleted file is evicted rather than re-read, warned
+	// about, and left citable.
+	rec, err := Reconcile(ctx, p.db, kbRoot, kbRoot, "")
+	if err != nil {
+		return ReindexContentSummary{}, err
+	}
+	for _, uri := range rec.URIs {
+		p.logger.Info("reindex removed vanished document", "uri", uri)
+	}
+
 	docs, err := storage.ListDocuments(ctx, p.db, storage.ListFilter{})
 	if err != nil {
 		return ReindexContentSummary{}, fmt.Errorf("ingest: reindex list documents: %w", err)
 	}
 
-	sum := ReindexContentSummary{Documents: len(docs)}
+	sum := ReindexContentSummary{Documents: len(docs), Removed: rec.Removed}
 	for _, d := range docs {
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
 		abs := filepath.Join(kbRoot, filepath.FromSlash(d.URI))
-		r, err := p.reindexFile(ctx, abs, d.URI, d.Collection, cfg)
+		r, err := p.reindexFile(ctx, abs, d.URI, d.Collection, cfg, true)
 		if err != nil {
 			if errors.Is(err, errReindexWrite) {
 				return sum, err
@@ -82,12 +101,15 @@ func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.
 // it. Forcing bypasses the content-hash skip, so an unchanged file is still
 // re-parsed and rewritten. A prepare failure is returned unwrapped (the caller
 // decides whether one unreadable file aborts the pass); a write failure is
-// tagged with errReindexWrite.
-func (p *Pipeline) reindexFile(ctx context.Context, absPath, uri, collection string, cfg chunk.Config) (result, error) {
+// tagged with errReindexWrite. skipVanished turns a missing file into a skip
+// rather than an error, which the batch pass wants and a single named file does
+// not.
+func (p *Pipeline) reindexFile(ctx context.Context, absPath, uri, collection string, cfg chunk.Config, skipVanished bool) (result, error) {
 	r, err := p.prepare(ctx, scanned{absPath: absPath, uri: uri}, Options{
-		Collection: collection,
-		Chunking:   cfg,
-		Force:      true,
+		Collection:   collection,
+		Chunking:     cfg,
+		Force:        true,
+		skipVanished: skipVanished,
 	})
 	if err != nil {
 		return result{}, err
@@ -110,7 +132,7 @@ func (p *Pipeline) reindexFile(ctx context.Context, absPath, uri, collection str
 // is an error here rather than a silent skip, because the caller asked for this
 // one file by name.
 func (p *Pipeline) ReindexOne(ctx context.Context, absPath, uri, collection string, cfg chunk.Config) (docID string, chunks int, err error) {
-	r, err := p.reindexFile(ctx, absPath, uri, collection, cfg)
+	r, err := p.reindexFile(ctx, absPath, uri, collection, cfg, false)
 	if err != nil {
 		return "", 0, err
 	}

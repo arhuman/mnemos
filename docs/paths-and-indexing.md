@@ -52,7 +52,11 @@ there explicitly.
   chosen subpath; otherwise it lands at the source's base name.
 - **`mnemos ingest <kb-subpath>`** re-indexes content already inside the kb. A path
   outside the kb is refused (it would mint URIs that `read`/`ls`/`move` cannot
-  resolve).
+  resolve). Ingesting a directory also **reconciles deletions**: a document under
+  that subtree whose file is gone is evicted, so it stops being returned and cited.
+  Ingesting a single file only indexes that file. If the directory itself cannot be
+  read the run fails and evicts nothing, since absence below an unreadable root
+  proves nothing.
 - **`mnemos remember`** (MCP/CLI) writes a note under `kb/capture/`.
 - **`mnemos okfy <kb-file>`** converts an in-kb `.txt`/`.md` into an OKF document.
 
@@ -61,6 +65,10 @@ only the fallback for files that don't declare one. This keeps collections stabl
 across re-indexes.
 
 ## URIs and citations
+
+A deleted file stops being citable at the next directory `ingest`, `reindex
+--content`, or watcher reconcile. Between those, `mnemos doctor` reports it as a
+`missing-file` finding.
 
 `search` (and `read` / `move` / `forget`) cite documents by their **URI**. Citations
 look like `security/scim.md#Provisioning` with line ranges. URIs are unique

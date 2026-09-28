@@ -15,8 +15,13 @@ import (
 // document URIs and tags, so an unfiltered run would disclose the namespace of a
 // collection the operator denied. Applying it at the verb layer is what makes the
 // exclusion hold for every surface, including one that does not exist yet.
+//
+// The tree root is supplied the same way, for the same reason: it enables the
+// missing-file detector for every caller at once, so no surface silently runs
+// without it.
 func (s *Service) Diagnose(ctx context.Context, opts doctor.Options) ([]doctor.Finding, error) {
 	opts.ExcludeCollections = s.cfg.HiddenCollections()
+	opts.KBRoot = s.treeRoot
 
 	return doctor.Run(ctx, s.db, opts)
 }

@@ -36,6 +36,16 @@ type Options struct {
 	// already-indexed documents; the oversize, binary, and unparseable skips still
 	// apply. Off for normal ingest/watch, which stay hash-skip-fast.
 	Force bool
+	// Reconcile evicts indexed documents under Root whose backing file no longer
+	// exists, so the run converges the index onto the filesystem instead of only
+	// adding to it (#42). Off by default because a run over a single file, or one
+	// whose caller reconciles separately (the watcher), must not prune anything.
+	Reconcile bool
+	// skipVanished downgrades a missing file from a run-aborting error to a skip.
+	// Unexported: it is a property of batch traversal, not a caller choice. A
+	// single-file entry point (ReindexOne backing an editor save) must keep
+	// erroring, since the caller named that file.
+	skipVanished bool
 }
 
 // Rules mirrors the config glob sets that drive file selection.
@@ -51,6 +61,9 @@ type Summary struct {
 	FilesIngested int
 	FilesSkipped  int
 	ChunksWritten int
+	// FilesRemoved is how many indexed documents were evicted because their
+	// backing file is gone. Always zero unless Options.Reconcile is set.
+	FilesRemoved int
 }
 
 // defaultMaxFileBytes is the built-in per-file size cap applied when a caller
@@ -183,6 +196,7 @@ func (p *Pipeline) Run(ctx context.Context, opts Options) (Summary, error) {
 	if p.encodingErr != nil {
 		return Summary{}, p.encodingErr
 	}
+	opts.skipVanished = true // batch traversal: one deleted file must not abort the run
 	files, err := scan(opts.Root, opts.URIBase, scanRules{
 		include:         opts.Rules.Include,
 		exclude:         opts.Rules.Exclude,
@@ -234,5 +248,39 @@ func (p *Pipeline) Run(ctx context.Context, opts Options) (Summary, error) {
 	summary.FilesSkipped = done.skipped
 	summary.ChunksWritten = done.chunks
 
+	// Reconcile after the scan, not before: a file both present and changed must be
+	// re-indexed, and evicting first would churn rows the scan is about to rewrite.
+	if opts.Reconcile {
+		removed, err := p.reconcileRun(ctx, opts)
+		if err != nil {
+			return summary, err
+		}
+		summary.FilesRemoved = removed
+	}
+
 	return summary, nil
+}
+
+// reconcileRun evicts documents under the run's root whose file is gone, scoping
+// by the root's position under the uri base.
+func (p *Pipeline) reconcileRun(ctx context.Context, opts Options) (int, error) {
+	uriBase := opts.URIBase
+	if uriBase == "" {
+		uriBase = opts.Root
+	}
+	prefix, ok := uriPrefixFor(uriBase, opts.Root)
+	if !ok {
+		p.logger.Warn("ingest reconcile skipped: root outside uri base", "root", opts.Root, "uri_base", uriBase)
+
+		return 0, nil
+	}
+	sum, err := Reconcile(ctx, p.db, opts.Root, uriBase, prefix)
+	if err != nil {
+		return 0, err
+	}
+	for _, uri := range sum.URIs {
+		p.logger.Info("ingest removed vanished document", "uri", uri)
+	}
+
+	return sum.Removed, nil
 }

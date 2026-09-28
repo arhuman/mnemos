@@ -86,9 +86,10 @@ func TestReindexContentRefreshesStoredFields(t *testing.T) {
 	require.Equal(t, "c", doc.Collection, "reindex preserves the stored collection")
 }
 
-// TestReindexContentMissingFileIsCounted proves a document whose backing file is
-// gone is reported as missing and left in place, not aborting the pass.
-func TestReindexContentMissingFileIsCounted(t *testing.T) {
+// TestReindexContentEvictsDeletedFile proves a document whose backing file is
+// gone is evicted rather than left citable (#42). The reconcile pass runs before
+// the document listing, so the deleted row is neither counted nor re-read.
+func TestReindexContentEvictsDeletedFile(t *testing.T) {
 	src := t.TempDir()
 	write(t, src, "a.md", "# A\n\nBody\n")
 	write(t, src, "b.md", "# B\n\nBody\n")
@@ -108,12 +109,44 @@ func TestReindexContentMissingFileIsCounted(t *testing.T) {
 
 	sum, err := p.ReindexContent(ctx, src, reindexChunking)
 	require.NoError(t, err)
-	require.Equal(t, 2, sum.Documents)
+	require.Equal(t, 1, sum.Removed, "the deleted file's document is evicted")
+	require.Equal(t, 1, sum.Documents, "eviction precedes the listing, so only the live document is considered")
 	require.Equal(t, 1, sum.Reindexed)
-	require.Equal(t, 1, sum.Missing)
+	require.Equal(t, 0, sum.Missing, "missing now means unreadable-but-present, not deleted")
 
-	// The missing file's row is left in place.
+	// The deleted file's row is gone, so it can no longer be cited.
 	doc, err := storage.GetDocumentByURI(ctx, db, "b.md")
 	require.NoError(t, err)
+	require.Nil(t, doc)
+
+	// The surviving document is untouched.
+	doc, err = storage.GetDocumentByURI(ctx, db, "a.md")
+	require.NoError(t, err)
 	require.NotNil(t, doc)
+}
+
+// TestReindexContentUnreadableRootEvictsNothing proves an unreadable kb root fails
+// the pass without evicting anything: absence below a root that cannot be read
+// proves nothing, and an unmounted volume must not empty the index.
+func TestReindexContentUnreadableRootEvictsNothing(t *testing.T) {
+	src := t.TempDir()
+	write(t, src, "a.md", "# A\n\nBody\n")
+
+	db := newDB(t)
+	p := ingest.New(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	_, err := p.Run(ctx, ingest.Options{
+		Root:       src,
+		Collection: "c",
+		Rules:      ingest.Rules{Include: []string{"**/*.md"}},
+		Chunking:   reindexChunking,
+	})
+	require.NoError(t, err)
+
+	_, err = p.ReindexContent(ctx, filepath.Join(src, "does-not-exist"), reindexChunking)
+	require.ErrorIs(t, err, ingest.ErrReconcileRootMissing)
+
+	doc, err := storage.GetDocumentByURI(ctx, db, "a.md")
+	require.NoError(t, err)
+	require.NotNil(t, doc, "a missing root must not evict anything")
 }

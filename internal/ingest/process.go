@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -48,13 +49,35 @@ func (p *Pipeline) IngestPath(ctx context.Context, absPath, uri, collection stri
 	return r.doc.ID, len(r.chunks), nil
 }
 
+// statSource stats a scanned file, translating a vanished file into a skip when
+// the caller is walking a batch. In a batch, a file deleted between the scan and
+// this stat (or a symlink whose target is gone) must not abort the run: the
+// errgroup would cancel every sibling worker over one deleted file. The reconcile
+// pass evicts any stale row it leaves behind. A caller that named one file
+// (ReindexOne, backing an editor save) expects an error instead, so the skip is
+// opt-in. A non-ErrNotExist failure (a permission error, say) is always an error:
+// it says nothing about whether the file exists.
+func (p *Pipeline) statSource(f scanned, opts Options) (info os.FileInfo, skip bool, err error) {
+	info, err = os.Stat(f.absPath)
+	if err == nil {
+		return info, false, nil
+	}
+	if opts.skipVanished && errors.Is(err, os.ErrNotExist) {
+		p.logger.Warn("ingest skip vanished file", "uri", f.uri, "path", f.absPath)
+
+		return nil, true, nil
+	}
+
+	return nil, false, fmt.Errorf("ingest: stat %q: %w", f.absPath, err)
+}
+
 // prepare reads, hashes, skip-checks, parses, and chunks a single file. The
 // returned result is handed to the writer; result.skip is true when the file's
 // content hash matches the stored document (no re-parse, no rewrite).
 func (p *Pipeline) prepare(ctx context.Context, f scanned, opts Options) (result, error) {
-	info, err := os.Stat(f.absPath)
-	if err != nil {
-		return result{}, fmt.Errorf("ingest: stat %q: %w", f.absPath, err)
+	info, skip, err := p.statSource(f, opts)
+	if err != nil || skip {
+		return result{skip: skip}, err
 	}
 	// Skip oversize files before reading them whole: prepare runs in parallel
 	// across GOMAXPROCS workers and each read is held in memory (plus its line

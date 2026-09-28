@@ -75,8 +75,11 @@ func reindexContent(cmd *cobra.Command, a *app.App) error {
 	}
 
 	out := cmd.OutOrStdout()
-	_, _ = fmt.Fprintf(out, "content reindex: %d/%d documents reparsed (%d chunks; %d skipped, %d missing)\n",
+	_, _ = fmt.Fprintf(out, "content reindex: %d/%d documents reparsed (%d chunks; %d skipped, %d unreadable)\n",
 		sum.Reindexed, sum.Documents, sum.Chunks, sum.Skipped, sum.Missing)
+	if sum.Removed > 0 {
+		_, _ = fmt.Fprintf(out, "removed:         %d documents whose backing file is gone\n", sum.Removed)
+	}
 	if sum.Reindexed > 0 {
 		_, _ = fmt.Fprintln(out, "note: rewritten chunks dropped their embeddings; run 'reindex --embeddings' to rebuild them")
 	}

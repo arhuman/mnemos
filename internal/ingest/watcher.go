@@ -208,42 +208,25 @@ func (w *Watcher) reconcile(ctx context.Context) error {
 	return w.removeVanished(ctx)
 }
 
-// removeVanished deletes documents in the collection whose uri resolves to a
-// file that no longer exists under root. The uri is root-relative (matching how
-// ingest stores it), so resolving it against root yields the absolute path to
-// stat.
+// removeVanished deletes documents under the watched root whose backing file no
+// longer exists. It delegates to the shared Reconcile pass so watch, ingest and
+// reindex evict identically; scoping is by watched subtree rather than by
+// collection, because a document's collection: frontmatter can differ from the
+// watch flag, which would leave such a file unreconciled.
 func (w *Watcher) removeVanished(ctx context.Context) error {
-	uris, err := storage.ListURIsByCollection(ctx, w.db, w.collection)
-	if err != nil {
-		return fmt.Errorf("watch: list documents: %w", err)
-	}
-	var vanished []string
-	for _, uri := range uris {
-		abs := filepath.Join(w.uriBase, filepath.FromSlash(uri))
-		if _, err = os.Stat(abs); errors.Is(err, os.ErrNotExist) {
-			vanished = append(vanished, uri)
-		}
-	}
-	if len(vanished) == 0 {
+	prefix, ok := uriPrefixFor(w.uriBase, w.root)
+	if !ok {
+		// A watch root outside the uri base mints URIs this pass cannot resolve;
+		// reconciling nothing is safer than guessing a scope.
+		w.logger.Warn("watch reconcile skipped: root outside uri base", "root", w.root, "uri_base", w.uriBase)
+
 		return nil
 	}
-
-	// Delete the whole batch in one transaction so a mid-run termination leaves
-	// the index either fully reconciled or untouched, never half-pruned.
-	tx, err := w.db.BeginTx(ctx, nil)
+	sum, err := Reconcile(ctx, w.db, w.root, w.uriBase, prefix)
 	if err != nil {
-		return fmt.Errorf("watch: begin tx: %w", err)
+		return fmt.Errorf("watch: reconcile: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck // no-op after a successful Commit
-	for _, uri := range vanished {
-		if err := storage.DeleteByURITx(ctx, tx, uri); err != nil {
-			return fmt.Errorf("watch: remove vanished %q: %w", uri, err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("watch: commit vanished removals: %w", err)
-	}
-	for _, uri := range vanished {
+	for _, uri := range sum.URIs {
 		w.logger.Info("watch removed vanished document", "uri", uri)
 	}
 

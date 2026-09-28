@@ -27,7 +27,7 @@ These apply to every command and select the workspace it acts on:
 | Command | Purpose |
 |---|---|
 | `mnemos add <source> [--into <subpath>] [--mode copy\|link] [--collection <c>]` | Bring **external** content into the kb and index it. `--mode copy` (default) snapshots it; `--mode link` symlinks a single file. `--into` picks the destination subpath (default: the source's base name) |
-| `mnemos ingest <kb-subpath> [--collection <c>]` | Re-index content **already inside** the kb. A path outside the kb is refused, since it would mint URIs that `read`/`ls`/`mv` cannot resolve |
+| `mnemos ingest <kb-subpath> [--collection <c>]` | Re-index content **already inside** the kb. A path outside the kb is refused, since it would mint URIs that `read`/`ls`/`mv` cannot resolve. A directory ingest also evicts documents under it whose file is gone; a single-file ingest does not |
 | `mnemos watch <kb-subpath> [--collection <c>]` | Watch a path and incrementally reindex changed and removed files |
 | `mnemos okfy <file> [--collection --type --tags --out --force]` | Convert an in-kb `.txt`/`.md` file into an OKF document, then index it (the source is kept intact) |
 
@@ -58,8 +58,8 @@ fallback for files that don't declare one.
 
 | Command | Purpose |
 |---|---|
-| `mnemos doctor [path] [--collection --path --max-bytes --json --fail-on-findings]` | Report knowledge-base health issues, read-only. `--max-bytes` flags oversized documents (default 51200); `--fail-on-findings` exits non-zero for CI |
-| `mnemos reindex [--content] [--embeddings]` | Recompute derived indexes. `--content` re-parses every indexed document from its file (bypassing the unchanged-file skip); `--embeddings` recomputes and stores vectors for all chunks |
+| `mnemos doctor [path] [--collection --path --max-bytes --json --fail-on-findings]` | Report knowledge-base health issues, read-only. Includes `missing-file`: an indexed document whose backing file is gone (a deleted file, or a symlink whose target was removed). `--max-bytes` flags oversized documents (default 51200); `--fail-on-findings` exits non-zero for CI |
+| `mnemos reindex [--content] [--embeddings]` | Recompute derived indexes. `--content` re-parses every indexed document from its file (bypassing the unchanged-file skip) and evicts documents whose file is gone; `--embeddings` recomputes and stores vectors for all chunks |
 | `mnemos validate <bundle> [--json]` | Validate an OKF v0.1 bundle for conformance |
 | `mnemos models install <model>` | Download an embedding model (e.g. `all-MiniLM-L6-v2`) into `<MNEMOS_DIR>/models` (for the embed build) |
 
