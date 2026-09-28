@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-28
+
 The first release: an FTS5 MVP plus capture. The default binary is lexical,
 pure-Go, and cgo-free; semantic/hybrid search is implemented and ships behind the
 `embed` build tag.
