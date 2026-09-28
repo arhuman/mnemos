@@ -57,6 +57,15 @@ there explicitly.
   Ingesting a single file only indexes that file. If the directory itself cannot be
   read the run fails and evicts nothing, since absence below an unreadable root
   proves nothing.
+- **`mnemos origin add <abs-dir> --prefix <ns>`** registers an external tree that
+  stays where it is. Its documents are indexed **in place** under the uri namespace
+  `<ns>/`, never copied into the kb, and never written to: every write verb refuses
+  a `<ns>/` uri and names the origin. Use it for a tree that is canonical under its
+  own tooling (a specification repository, an application source tree). Two such
+  trees can hold the same relative path without colliding, because their prefixes
+  differ. Refresh with `mnemos origin reindex`, which picks up new files and evicts
+  deleted ones; `watch` does not cover origins. See
+  [ADR-0013](adr/0013-registered-external-origins.md).
 - **`mnemos remember`** (MCP/CLI) writes a note under `kb/capture/`.
 - **`mnemos okfy <kb-file>`** converts an in-kb `.txt`/`.md` into an OKF document.
 
@@ -66,8 +75,12 @@ across re-indexes.
 
 ## URIs and citations
 
+URIs from a registered origin are namespaced as `<prefix>/<path under the origin
+root>`, so the prefix is reserved: registration refuses one that collides with
+existing kb content, and nothing can be written under it afterwards.
+
 A deleted file stops being citable at the next directory `ingest`, `reindex
---content`, or watcher reconcile. Between those, `mnemos doctor` reports it as a
+--content`, `origin reindex`, or watcher reconcile. Between those, `mnemos doctor` reports it as a
 `missing-file` finding.
 
 `search` (and `read` / `move` / `forget`) cite documents by their **URI**. Citations

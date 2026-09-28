@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/arhuman/mnemos/internal/okf"
 	"github.com/arhuman/mnemos/internal/storage"
@@ -50,6 +51,9 @@ const (
 	// CategoryMissingFile marks an indexed document whose backing file is gone, so
 	// search would still cite line ranges into a file that no longer exists.
 	CategoryMissingFile = "missing-file"
+	// CategoryOrigin marks a registered external origin that is unreadable or
+	// stale, so its indexed content no longer reflects the tree it names.
+	CategoryOrigin = "origin"
 
 	SeverityWarn = "warn"
 	SeverityInfo = "info"
@@ -59,6 +63,12 @@ const (
 // unset (50 KiB): large enough that ordinary notes pass, small enough to flag
 // files that likely should be split.
 const DefaultMaxBytes int64 = 51200
+
+// DefaultStaleOriginAfter is how long an origin may go un-reindexed before it is
+// reported (7 days). Origins are reindexed on demand by design, so this is not a
+// failure: it is the point where "indexed in place" stops being a fair
+// description of what retrieval is serving.
+const DefaultStaleOriginAfter = 7 * 24 * time.Hour
 
 // Options narrows and tunes a run. PathPrefix/Collection scope the checks the
 // same way `ls`/`search` filters do (empty = whole tree). MaxBytes overrides the
@@ -76,6 +86,11 @@ type Options struct {
 	// missing-file detector, the one check that reads the filesystem. Empty skips
 	// that detector, keeping a run purely index-driven.
 	KBRoot string
+	// StaleOriginAfter is how long a registered origin may go un-reindexed before
+	// it is reported. Zero uses DefaultStaleOriginAfter. Origins are reindexed on
+	// demand, so drift is expected; the finding exists to bound how long it can go
+	// unnoticed.
+	StaleOriginAfter time.Duration
 }
 
 // Run executes every detector against the store and returns the findings, grouped
@@ -111,7 +126,67 @@ func Run(ctx context.Context, db *sql.DB, opts Options) ([]Finding, error) {
 	findings = append(findings, structuralGaps(digests, scopePrefix(chunkless, opts.PathPrefix))...)
 	findings = append(findings, missingFiles(digests, opts.KBRoot)...)
 
+	origins, err := storage.ListOrigins(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, originHealth(origins, opts.StaleOriginAfter)...)
+
 	return findings, nil
+}
+
+// originHealth reports registered origins that are unreadable or stale. An
+// unreadable root is the more serious of the two: its documents are still served
+// and cited, but nothing can verify or refresh them, and a reindex will refuse
+// rather than evict them.
+func originHealth(origins []storage.Origin, staleAfter time.Duration) []Finding {
+	if staleAfter <= 0 {
+		staleAfter = DefaultStaleOriginAfter
+	}
+	var out []Finding
+	for _, o := range origins {
+		if _, err := os.Stat(o.Path); err != nil {
+			out = append(out, Finding{
+				Category:   CategoryOrigin,
+				Severity:   SeverityWarn,
+				Title:      fmt.Sprintf("origin %q is unreadable at %s", o.Prefix, o.Path),
+				Detail:     "its documents are still indexed and cited, but cannot be verified or refreshed",
+				URIs:       []string{o.Prefix + "/"},
+				Suggestion: "restore or remount the path, or run 'mnemos origin remove " + o.Prefix + "'",
+			})
+
+			continue
+		}
+		if stale, age := originIsStale(o, staleAfter); stale {
+			out = append(out, Finding{
+				Category:   CategoryOrigin,
+				Severity:   SeverityInfo,
+				Title:      fmt.Sprintf("origin %q has not been reindexed in %d days", o.Prefix, int(age.Hours()/24)),
+				Detail:     "external trees change without mnemos seeing it; retrieval serves the last indexed state",
+				URIs:       []string{o.Prefix + "/"},
+				Suggestion: "run 'mnemos origin reindex " + o.Prefix + "'",
+			})
+		}
+	}
+
+	return out
+}
+
+// originIsStale reports whether an origin has gone un-reindexed for longer than
+// staleAfter. An origin that was never indexed, or whose timestamp does not
+// parse, is not reported: the first is covered by its empty listing and the
+// second is a store problem, not a staleness one.
+func originIsStale(o storage.Origin, staleAfter time.Duration) (bool, time.Duration) {
+	if o.LastIndexedAt == "" {
+		return false, 0
+	}
+	last, err := time.Parse(time.RFC3339, o.LastIndexedAt)
+	if err != nil {
+		return false, 0
+	}
+	age := time.Since(last)
+
+	return age > staleAfter, age
 }
 
 // missingFiles reports indexed documents whose backing file no longer exists. It

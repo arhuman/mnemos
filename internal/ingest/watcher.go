@@ -222,7 +222,7 @@ func (w *Watcher) removeVanished(ctx context.Context) error {
 
 		return nil
 	}
-	sum, err := Reconcile(ctx, w.db, w.root, w.uriBase, prefix)
+	sum, err := Reconcile(ctx, w.db, w.root, w.uriBase, prefix, false)
 	if err != nil {
 		return fmt.Errorf("watch: reconcile: %w", err)
 	}

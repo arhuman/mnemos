@@ -38,10 +38,20 @@ var ErrReconcileRootMissing = errors.New("ingest: reconcile root is missing or u
 // "adr" covers "adr/0001.md" but never "adr-archive/x.md"; empty means the whole
 // store. root is the directory whose readability gates the pass.
 //
+// stripPrefix distinguishes the two shapes a prefix can have. For an in-kb
+// subtree the prefix is part of the path under uriBase, so it stays in the join.
+// For a registered origin (ADR-0013) it is a namespace that exists only in the
+// uri: the file lives at "<origin root>/<path after the prefix>", so the prefix
+// must come off before resolving. Getting this backwards would stat the wrong
+// path and evict every document in the namespace.
+//
+// exclude names namespaces to skip entirely, so a kb-anchored pass never judges a
+// registered origin's documents by a path they do not have.
+//
 // It returns ErrReconcileRootMissing without evicting anything when root cannot
 // be read. Every eviction commits in one transaction, so an interrupted run
 // leaves the index either fully reconciled or untouched, never half-pruned.
-func Reconcile(ctx context.Context, db *sql.DB, root, uriBase, uriPrefix string) (ReconcileSummary, error) {
+func Reconcile(ctx context.Context, db *sql.DB, root, uriBase, uriPrefix string, stripPrefix bool, exclude ...string) (ReconcileSummary, error) {
 	// Gate on the root before trusting any per-file absence below it.
 	if _, err := os.Stat(root); err != nil {
 		return ReconcileSummary{}, fmt.Errorf("%w: %q: %w", ErrReconcileRootMissing, root, err)
@@ -55,11 +65,11 @@ func Reconcile(ctx context.Context, db *sql.DB, root, uriBase, uriPrefix string)
 	var sum ReconcileSummary
 	var vanished []string
 	for _, uri := range uris {
-		if !uriUnderPrefix(uri, uriPrefix) {
+		if !uriUnderPrefix(uri, uriPrefix) || underAnyPrefix(uri, exclude) {
 			continue
 		}
 		sum.Considered++
-		abs := filepath.Join(uriBase, filepath.FromSlash(uri))
+		abs := filepath.Join(uriBase, filepath.FromSlash(uriToRelPath(uri, uriPrefix, stripPrefix)))
 		// Stat, not Lstat: it follows symlinks, so a link whose target was deleted
 		// counts as vanished even though the link file itself still exists.
 		if _, err := os.Stat(abs); errors.Is(err, os.ErrNotExist) {
@@ -96,6 +106,29 @@ func deleteURIBatch(ctx context.Context, db *sql.DB, uris []string) error {
 	}
 
 	return nil
+}
+
+// underAnyPrefix reports whether uri sits under any of the given namespaces. It
+// is how a pass anchored on one root skips documents belonging to another (a
+// registered origin's, whose files are not under this root at all).
+func underAnyPrefix(uri string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if uriUnderPrefix(uri, p) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// uriToRelPath turns a uri into the path to resolve against uriBase. With strip
+// set it removes the namespace segment, which exists in the uri but not on disk.
+func uriToRelPath(uri, prefix string, strip bool) string {
+	if !strip || prefix == "" {
+		return uri
+	}
+
+	return strings.TrimPrefix(strings.TrimPrefix(uri, strings.TrimSuffix(prefix, "/")), "/")
 }
 
 // uriUnderPrefix reports whether uri is prefix itself or sits beneath it at a

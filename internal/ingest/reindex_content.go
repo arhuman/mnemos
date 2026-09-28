@@ -42,6 +42,9 @@ type ReindexContentSummary struct {
 // editing files. It walks the documents table rather than the filesystem, so each
 // document keeps its stored collection and only indexed documents are touched.
 //
+// Documents belonging to a registered external origin are left alone: their files
+// live outside the kb, and `mnemos origin reindex` refreshes them.
+//
 // A document whose file no longer exists is evicted, so a reindex converges the
 // index onto what is on disk instead of leaving a deleted file citable (#42). An
 // unreadable-but-present file is left in place with a warning. If kbRoot itself is
@@ -52,9 +55,22 @@ type ReindexContentSummary struct {
 // chunk id); callers that use semantic search should run `reindex --embeddings`
 // afterwards.
 func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.Config) (ReindexContentSummary, error) {
+	// A registered origin's documents live outside the kb and their uris carry a
+	// namespace segment that is not on disk, so resolving them against kbRoot
+	// would stat a path that never exists and evict the whole namespace. They are
+	// refreshed by `mnemos origin reindex` instead, which knows their root.
+	origins, err := storage.ListOrigins(ctx, p.db)
+	if err != nil {
+		return ReindexContentSummary{}, fmt.Errorf("ingest: reindex list origins: %w", err)
+	}
+	prefixes := make([]string, 0, len(origins))
+	for _, o := range origins {
+		prefixes = append(prefixes, o.Prefix)
+	}
+
 	// Reconcile first so a deleted file is evicted rather than re-read, warned
 	// about, and left citable.
-	rec, err := Reconcile(ctx, p.db, kbRoot, kbRoot, "")
+	rec, err := Reconcile(ctx, p.db, kbRoot, kbRoot, "", false, prefixes...)
 	if err != nil {
 		return ReindexContentSummary{}, err
 	}
@@ -67,11 +83,15 @@ func (p *Pipeline) ReindexContent(ctx context.Context, kbRoot string, cfg chunk.
 		return ReindexContentSummary{}, fmt.Errorf("ingest: reindex list documents: %w", err)
 	}
 
-	sum := ReindexContentSummary{Documents: len(docs), Removed: rec.Removed}
+	sum := ReindexContentSummary{Removed: rec.Removed}
 	for _, d := range docs {
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
+		if underAnyPrefix(d.URI, prefixes) {
+			continue
+		}
+		sum.Documents++
 		abs := filepath.Join(kbRoot, filepath.FromSlash(d.URI))
 		r, err := p.reindexFile(ctx, abs, d.URI, d.Collection, cfg, true)
 		if err != nil {

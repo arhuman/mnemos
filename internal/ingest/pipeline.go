@@ -19,6 +19,7 @@ import (
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/model"
 	"github.com/arhuman/mnemos/internal/security"
+	"github.com/arhuman/mnemos/internal/storage"
 )
 
 // Options configures a single ingest run.
@@ -36,6 +37,13 @@ type Options struct {
 	// already-indexed documents; the oversize, binary, and unparseable skips still
 	// apply. Off for normal ingest/watch, which stay hash-skip-fast.
 	Force bool
+	// URIPrefix namespaces every minted uri as "<URIPrefix>/<path under Root>".
+	// Empty, the default, means uris stay relative to URIBase, which is every
+	// in-kb scan. A registered external origin sets it so its documents get
+	// stable URIs that cannot collide with another tree's identical relative
+	// paths (ADR-0013). With it set, URIBase is Root: the origin root is what its
+	// paths are relative to.
+	URIPrefix string
 	// Reconcile evicts indexed documents under Root whose backing file no longer
 	// exists, so the run converges the index onto the filesystem instead of only
 	// adding to it (#42). Off by default because a run over a single file, or one
@@ -197,7 +205,7 @@ func (p *Pipeline) Run(ctx context.Context, opts Options) (Summary, error) {
 		return Summary{}, p.encodingErr
 	}
 	opts.skipVanished = true // batch traversal: one deleted file must not abort the run
-	files, err := scan(opts.Root, opts.URIBase, scanRules{
+	files, err := scan(opts.Root, opts.URIBase, opts.URIPrefix, scanRules{
 		include:         opts.Rules.Include,
 		exclude:         opts.Rules.Exclude,
 		securityExclude: opts.Rules.SecurityExclude,
@@ -268,13 +276,34 @@ func (p *Pipeline) reconcileRun(ctx context.Context, opts Options) (int, error) 
 	if uriBase == "" {
 		uriBase = opts.Root
 	}
+	// A namespaced run owns exactly its prefix, and its uris resolve against the
+	// origin root rather than the kb, so the derivation below does not apply.
+	if opts.URIPrefix != "" {
+		return p.reconcileScope(ctx, opts.Root, opts.Root, opts.URIPrefix, true)
+	}
 	prefix, ok := uriPrefixFor(uriBase, opts.Root)
 	if !ok {
 		p.logger.Warn("ingest reconcile skipped: root outside uri base", "root", opts.Root, "uri_base", uriBase)
 
 		return 0, nil
 	}
-	sum, err := Reconcile(ctx, p.db, opts.Root, uriBase, prefix)
+	// A kb-anchored pass must not judge a registered origin's documents: their
+	// files are not under this root, so they would all look vanished.
+	origins, err := storage.ListOrigins(ctx, p.db)
+	if err != nil {
+		return 0, fmt.Errorf("ingest: reconcile list origins: %w", err)
+	}
+	exclude := make([]string, 0, len(origins))
+	for _, o := range origins {
+		exclude = append(exclude, o.Prefix)
+	}
+
+	return p.reconcileScope(ctx, opts.Root, uriBase, prefix, false, exclude...)
+}
+
+// reconcileScope runs the shared reconcile pass and logs what it evicted.
+func (p *Pipeline) reconcileScope(ctx context.Context, root, uriBase, prefix string, stripPrefix bool, exclude ...string) (int, error) {
+	sum, err := Reconcile(ctx, p.db, root, uriBase, prefix, stripPrefix, exclude...)
 	if err != nil {
 		return 0, err
 	}

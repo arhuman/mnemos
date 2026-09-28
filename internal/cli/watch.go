@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,7 @@ import (
 	"github.com/arhuman/mnemos/internal/app"
 	"github.com/arhuman/mnemos/internal/chunk"
 	"github.com/arhuman/mnemos/internal/ingest"
+	"github.com/arhuman/mnemos/internal/storage"
 )
 
 // newWatchCmd builds the `watch <path> --collection <name>` command, which
@@ -35,6 +37,9 @@ func newWatchCmd(state *rootState) *cobra.Command {
 
 func runWatch(cmd *cobra.Command, state *rootState, path, collection string) error {
 	return withStore(state, true, func(a *app.App) error {
+		if err := refuseOriginWatch(cmd, a, path); err != nil {
+			return err
+		}
 		watcher, err := ingest.NewWatcher(a.DB, a.Logger, path, collection, ingest.WatchConfig{
 			Include:         a.Config.Indexing.Include,
 			Exclude:         a.Config.Indexing.Exclude,
@@ -62,4 +67,36 @@ func runWatch(cmd *cobra.Command, state *rootState, path, collection string) err
 
 		return nil
 	})
+}
+
+// refuseOriginWatch rejects watching a registered origin's tree. The watcher is
+// single-root per process and its walk does not descend symlinked directories,
+// so it would appear to work while indexing nothing; refusing explicitly is
+// better than a watch that silently observes an empty set (ADR-0013).
+func refuseOriginWatch(cmd *cobra.Command, a *app.App, path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("watch: resolve %q: %w", path, err)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		resolved = abs
+	}
+	origins, err := storage.ListOrigins(cmd.Context(), a.DB)
+	if err != nil {
+		return err
+	}
+	for _, o := range origins {
+		// An unrelatable path cannot be inside this origin, so skipping is correct
+		// here (unlike registration, where the same question gates a write).
+		rel, relErr := filepath.Rel(o.Path, resolved)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+
+		return fmt.Errorf("watch: %q is inside registered origin %q, which watch does not support; run 'mnemos origin reindex %s' instead",
+			path, o.Prefix, o.Prefix)
+	}
+
+	return nil
 }

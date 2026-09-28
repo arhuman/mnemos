@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -225,4 +226,69 @@ func TestMissingFileSkippedWithoutKBRoot(t *testing.T) {
 	findings, err := doctor.Run(context.Background(), db, doctor.Options{})
 	require.NoError(t, err)
 	require.Empty(t, byCategory(findings, doctor.CategoryMissingFile))
+}
+
+// TestOriginUnreadableReported proves a registered origin whose root is gone is
+// reported: its documents are still served and cited, but nothing can verify or
+// refresh them, and a reindex refuses rather than evicting them.
+func TestOriginUnreadableReported(t *testing.T) {
+	db := testutil.NewDB(t)
+	ctx := context.Background()
+	live := t.TempDir()
+
+	require.NoError(t, storage.InsertOrigin(ctx, db, storage.Origin{
+		Prefix: "live", Path: live, Collection: "c", RegisteredAt: "2026-01-01T00:00:00Z",
+	}))
+	require.NoError(t, storage.InsertOrigin(ctx, db, storage.Origin{
+		Prefix: "gone", Path: filepath.Join(t.TempDir(), "unmounted"),
+		Collection: "c", RegisteredAt: "2026-01-01T00:00:00Z",
+	}))
+
+	findings, err := doctor.Run(ctx, db, doctor.Options{})
+	require.NoError(t, err)
+
+	got := byCategory(findings, doctor.CategoryOrigin)
+	require.Len(t, got, 1)
+	require.Contains(t, got[0].Title, "gone")
+	require.Equal(t, doctor.SeverityWarn, got[0].Severity)
+}
+
+// TestOriginStaleReported proves an origin that has not been reindexed for longer
+// than the threshold is surfaced, since external trees drift silently.
+func TestOriginStaleReported(t *testing.T) {
+	db := testutil.NewDB(t)
+	ctx := context.Background()
+	root := t.TempDir()
+
+	require.NoError(t, storage.InsertOrigin(ctx, db, storage.Origin{
+		Prefix: "spec", Path: root, Collection: "c", RegisteredAt: "2026-01-01T00:00:00Z",
+	}))
+	old := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
+	require.NoError(t, storage.TouchOriginIndexed(ctx, db, "spec", old))
+
+	findings, err := doctor.Run(ctx, db, doctor.Options{})
+	require.NoError(t, err)
+	got := byCategory(findings, doctor.CategoryOrigin)
+	require.Len(t, got, 1)
+	require.Equal(t, doctor.SeverityInfo, got[0].Severity)
+
+	// Freshly indexed is not a finding.
+	require.NoError(t, storage.TouchOriginIndexed(ctx, db, "spec", time.Now().UTC().Format(time.RFC3339)))
+	findings, err = doctor.Run(ctx, db, doctor.Options{})
+	require.NoError(t, err)
+	require.Empty(t, byCategory(findings, doctor.CategoryOrigin))
+}
+
+// TestNeverIndexedOriginIsNotStale proves a fresh registration is not reported as
+// stale: it has simply not been indexed yet, which its empty listing shows.
+func TestNeverIndexedOriginIsNotStale(t *testing.T) {
+	db := testutil.NewDB(t)
+	ctx := context.Background()
+	require.NoError(t, storage.InsertOrigin(ctx, db, storage.Origin{
+		Prefix: "spec", Path: t.TempDir(), Collection: "c", RegisteredAt: "2026-01-01T00:00:00Z",
+	}))
+
+	findings, err := doctor.Run(ctx, db, doctor.Options{})
+	require.NoError(t, err)
+	require.Empty(t, byCategory(findings, doctor.CategoryOrigin))
 }

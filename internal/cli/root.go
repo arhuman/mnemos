@@ -85,6 +85,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newWatchCmd(state))
 	root.AddCommand(newModelsCmd(state))
 	root.AddCommand(newReindexCmd(state))
+	root.AddCommand(newOriginCmd(state))
 	root.AddCommand(newForgetCmd(state))
 	root.AddCommand(newMvCmd(state))
 	root.AddCommand(newEditCmd(state))

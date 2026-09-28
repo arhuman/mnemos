@@ -110,7 +110,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 	}, strings.TrimSpace(in.Path) != "")
 
 	// outExisted tells the log whether this write created or updated a concept.
-	absPath, uri, outExisted, err := s.writeNoteFile(in, filename, content)
+	absPath, uri, outExisted, err := s.writeNoteFile(ctx, in, filename, content)
 	if err != nil {
 		return RememberResult{}, err
 	}
@@ -163,7 +163,7 @@ func (s *Service) Remember(ctx context.Context, in RememberInput) (RememberResul
 // caller-chosen target confined to the tree and required to end in .md;
 // otherwise the note is auto-named under the capture dir, cited by its
 // capture-dir-relative path (e.g. ".mnemos/capture/idea-...md").
-func (s *Service) writeNoteFile(in RememberInput, filename string, content []byte) (absPath, uri string, outExisted bool, err error) {
+func (s *Service) writeNoteFile(ctx context.Context, in RememberInput, filename string, content []byte) (absPath, uri string, outExisted bool, err error) {
 	if strings.TrimSpace(in.Path) == "" {
 		// Capture is the fixed kb/capture subdirectory of the tree root; notes are
 		// cited by their tree-root-relative URI ("capture/<file>").
@@ -181,7 +181,7 @@ func (s *Service) writeNoteFile(in RememberInput, filename string, content []byt
 
 	// Caller-chosen target: confine it to the tree root and require .md so a
 	// remembered note is always an OKF markdown file.
-	abs, u, rerr := security.ResolveWithin(s.treeRoot, in.Path, s.cfg.ConfinementExclude())
+	abs, u, rerr := s.resolveWritable(ctx, in.Path)
 	if rerr != nil {
 		return "", "", false, fmt.Errorf("remember path: %w", rerr)
 	}
@@ -258,7 +258,7 @@ func (s *Service) Forget(ctx context.Context, path string) (ForgetResult, error)
 		return ForgetResult{}, errDeleteDisabled
 	}
 
-	abs, uri, err := security.ResolveWithin(s.treeRoot, path, s.cfg.ConfinementExclude())
+	abs, uri, err := s.resolveWritable(ctx, path)
 	if err != nil {
 		return ForgetResult{}, err
 	}
@@ -293,12 +293,11 @@ func (s *Service) Move(ctx context.Context, from, to string) (MoveResult, error)
 		return MoveResult{}, errDeleteDisabled
 	}
 
-	exclude := s.cfg.ConfinementExclude()
-	absFrom, oldURI, err := security.ResolveWithin(s.treeRoot, from, exclude)
+	absFrom, oldURI, err := s.resolveWritable(ctx, from)
 	if err != nil {
 		return MoveResult{}, fmt.Errorf("source: %w", err)
 	}
-	absTo, newURI, err := security.ResolveWithin(s.treeRoot, to, exclude)
+	absTo, newURI, err := s.resolveWritable(ctx, to)
 	if err != nil {
 		return MoveResult{}, fmt.Errorf("destination: %w", err)
 	}

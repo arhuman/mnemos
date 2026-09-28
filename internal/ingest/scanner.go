@@ -33,7 +33,7 @@ type scanRules struct {
 // like ".git/**" catch the scan root), while the stored URI is the path relative
 // to uriBase. uriBase is the knowledge-base root, so a subtree ingest still mints
 // kb-relative URIs; passing root as uriBase reproduces scan-root-relative URIs.
-func scan(root, uriBase string, rules scanRules) ([]scanned, error) {
+func scan(root, uriBase, uriPrefix string, rules scanRules) ([]scanned, error) {
 	info, err := os.Stat(root)
 	if err != nil {
 		return nil, fmt.Errorf("scan: stat %q: %w", root, err)
@@ -54,10 +54,23 @@ func scan(root, uriBase string, rules scanRules) ([]scanned, error) {
 	}
 
 	if !info.IsDir() {
-		return scanFile(root, baseAbs, rules)
+		return scanFile(root, baseAbs, uriPrefix, rules)
 	}
 
-	return scanDir(root, baseAbs, rules)
+	return scanDir(root, baseAbs, uriPrefix, rules)
+}
+
+// joinURIPrefix namespaces a uri under prefix. An empty prefix is the identity,
+// which is every in-kb scan. A registered external origin passes its prefix so
+// its documents get stable URIs of the form "<prefix>/<path under the origin>"
+// (ADR-0013), which is what keeps two independent trees with identical relative
+// paths from colliding on the store-wide unique uri.
+func joinURIPrefix(prefix, uri string) string {
+	if prefix == "" {
+		return uri
+	}
+
+	return prefix + "/" + uri
 }
 
 // uriRelTo returns the slash-normalized path of abs relative to baseAbs.
@@ -72,7 +85,7 @@ func uriRelTo(baseAbs, abs string) (string, error) {
 
 // scanFile evaluates a single-file root against the rules (matched by base name)
 // and, if selected, returns it with a uriBase-relative URI.
-func scanFile(root, baseAbs string, rules scanRules) ([]scanned, error) {
+func scanFile(root, baseAbs, uriPrefix string, rules scanRules) ([]scanned, error) {
 	if !rules.match(filepath.Base(root)) {
 		return nil, nil
 	}
@@ -85,12 +98,12 @@ func scanFile(root, baseAbs string, rules scanRules) ([]scanned, error) {
 		return nil, err
 	}
 
-	return []scanned{{absPath: abs, uri: uri}}, nil
+	return []scanned{{absPath: abs, uri: joinURIPrefix(uriPrefix, uri)}}, nil
 }
 
 // scanDir walks a directory root, selecting files by rules (matched on the
 // root-relative path) and storing each with a uriBase-relative URI.
-func scanDir(root, baseAbs string, rules scanRules) ([]scanned, error) {
+func scanDir(root, baseAbs, uriPrefix string, rules scanRules) ([]scanned, error) {
 	var out []scanned
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -114,7 +127,7 @@ func scanDir(root, baseAbs string, rules scanRules) ([]scanned, error) {
 		if err != nil {
 			return err
 		}
-		out = append(out, scanned{absPath: abs, uri: uri})
+		out = append(out, scanned{absPath: abs, uri: joinURIPrefix(uriPrefix, uri)})
 
 		return nil
 	})

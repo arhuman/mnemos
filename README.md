@@ -96,6 +96,18 @@ mnemos add ~/work/api/docs   --into api
 mnemos add ~/work/infra/docs --into infra
 ```
 
+**For a tree that must stay where it is**, register it as an origin instead of
+copying it. It is indexed in place, read-only, under its own uri namespace:
+
+```bash
+mnemos origin add ~/work/spec --prefix spec --collection spec
+mnemos origin reindex spec    # picks up new files, evicts deleted ones
+```
+
+Two registered trees can hold the same relative path without colliding, so a
+specification tree and a source tree stay searchable together in one store. mnemos
+never writes to a registered origin.
+
 Details in [docs/paths-and-indexing.md](docs/paths-and-indexing.md).
 </details>
 
@@ -430,6 +442,7 @@ baseline. See [docs/architecture.md](docs/architecture.md#retrieval-evaluation).
 - Shipped binaries carry SBOMs (generated with syft) and are signed with cosign (keyless OIDC).
 - Read-only by default. Write-back is opt-in (`allow_write = true`). Destructive operations (forget, move) require a separate opt-in (`allow_delete = true`).
 - All caller-supplied paths are validated by a confinement guard before any disk operation: `..` traversal, absolute paths outside the tree root, symlink escapes, access to `.mnemos/`, and `[security].exclude` globs are all rejected.
+- Registered external origins are read-only: every write verb refuses a uri in a registered namespace and names the owning origin. The guard is unchanged for everything outside a registered origin, so an unregistered symlink escape is rejected exactly as before.
 - Content is secret-scanned before it is indexed, on both the capture path
   (`remember`, `okfy`, which reject) and the ingest path (`ingest`, `add`,
   `watch`, `reindex`, which skip the file with a warning naming the matched rules

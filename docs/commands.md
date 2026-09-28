@@ -59,6 +59,10 @@ fallback for files that don't declare one.
 | Command | Purpose |
 |---|---|
 | `mnemos doctor [path] [--collection --path --max-bytes --json --fail-on-findings]` | Report knowledge-base health issues, read-only. Includes `missing-file`: an indexed document whose backing file is gone (a deleted file, or a symlink whose target was removed). `--max-bytes` flags oversized documents (default 51200); `--fail-on-findings` exits non-zero for CI |
+| `mnemos origin add <abs-dir> --prefix <ns> [--collection <c>]` | Register an external directory and index it **in place**, read-only, under the uri namespace `<ns>/`. Nothing is copied into the kb and nothing is ever written to the tree |
+| `mnemos origin list [--json]` | List registered origins with their path, collection, last-indexed time, and whether the root is currently readable. `--json` exports a registration set that can be replayed |
+| `mnemos origin reindex [prefix]` | Re-index registered origins in place (all, or one). Picks up new files and evicts deleted ones. A missing root fails and evicts nothing |
+| `mnemos origin remove <prefix>` | Unregister an origin and evict its documents. The files on disk are never touched |
 | `mnemos reindex [--content] [--embeddings]` | Recompute derived indexes. `--content` re-parses every indexed document from its file (bypassing the unchanged-file skip) and evicts documents whose file is gone; `--embeddings` recomputes and stores vectors for all chunks |
 | `mnemos validate <bundle> [--json]` | Validate an OKF v0.1 bundle for conformance |
 | `mnemos models install <model>` | Download an embedding model (e.g. `all-MiniLM-L6-v2`) into `<MNEMOS_DIR>/models` (for the embed build) |

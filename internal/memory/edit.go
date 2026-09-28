@@ -10,7 +10,6 @@ import (
 	"github.com/arhuman/mnemos/internal/ingest"
 	"github.com/arhuman/mnemos/internal/okfyaml"
 	"github.com/arhuman/mnemos/internal/search"
-	"github.com/arhuman/mnemos/internal/security"
 	"github.com/arhuman/mnemos/internal/storage"
 )
 
@@ -88,7 +87,7 @@ func (s *Service) OpenForEdit(ctx context.Context, uri string) (EditSource, erro
 		return EditSource{}, err
 	}
 
-	abs, resolved, err := security.ResolveWithin(s.treeRoot, uri, s.cfg.ConfinementExclude())
+	abs, resolved, err := s.resolveWritable(ctx, uri)
 	if err != nil {
 		return EditSource{}, fmt.Errorf("edit path: %w", err)
 	}
@@ -167,7 +166,7 @@ func (s *Service) EditFrontmatter(ctx context.Context, in EditFrontmatterInput) 
 		return EditResult{}, errWriteDisabled
 	}
 
-	abs, uri, err := security.ResolveWithin(s.treeRoot, in.URI, s.cfg.ConfinementExclude())
+	abs, uri, err := s.resolveWritable(ctx, in.URI)
 	if err != nil {
 		return EditResult{}, fmt.Errorf("edit path: %w", err)
 	}
