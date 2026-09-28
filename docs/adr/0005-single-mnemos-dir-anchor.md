@@ -4,12 +4,14 @@ Date: 2026-06-30
 
 ## Status
 
-Accepted (implementation phased — see Consequences). Phase 1 (tree-root anchoring
+Accepted (implementation phased, see Consequences). Phase 1 (tree-root anchoring
 of capture/ingest) and Phase 2 (the `MNEMOS_DIR` model, `mnemos add`, and
 `mnemos migrate`) have landed. Document URIs are now kb-relative by construction
 across `add`/`ingest`/`watch` (a subtree ingest no longer mints scan-root-relative
 URIs), and ingestion honors `collection:` frontmatter so a re-index preserves
-collections. Remaining: the `index-only` external-source mode (Phase 3).
+collections. Phase 3 (`index-only` external sources) is no longer optional: the
+gate it was conditioned on is met, and its design is recorded in
+[ADR-0013](0013-registered-external-origins.md).
 
 Supersedes the location half of the layered-config model in
 [0002](0002-okf-tree-write-delete-move.md) (the confinement validator and the
@@ -203,8 +205,11 @@ divergence, no cwd dependence, and the absolute-`capture.dir` key no longer exis
 2. **Phase 2 (the model)**: introduce `MNEMOS_DIR`, derived `kb/`/`state/`/`models/`,
    drop `[storage].path`/`[capture].dir`, add `mnemos add` and `mnemos migrate`,
    update `docs/paths-and-indexing.md` and the README.
-3. **Phase 3 (optional)**: `index-only` external sources if in-place repo indexing
-   becomes a hard requirement.
+3. **Phase 3 (planned)**: `index-only` external sources. The gate ("if in-place repo
+   indexing becomes a hard requirement") is met, per issues #39 and #41. Registered
+   origins are read-only, namespaced by an explicit prefix, and reindexed on demand;
+   the confinement guard is unchanged outside registered roots. See
+   [ADR-0013](0013-registered-external-origins.md).
 
 ### Migration
 
